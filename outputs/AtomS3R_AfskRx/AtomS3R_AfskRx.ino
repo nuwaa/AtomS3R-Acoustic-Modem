@@ -16,6 +16,7 @@
 #include "ReliablePacketLink.h"
 #include "GroupChatProtocol.h"
 #include "GroupChatRuntime.h"
+#include "AcousticMode.h"
 
 constexpr size_t SAMPLE_RATE = 48000;
 constexpr size_t SAMPLES = SAMPLE_RATE * 3;
@@ -47,6 +48,7 @@ bool slipMode=false;
 bool pppMode=false;
 enum class BootMode:uint8_t { Normal,Slip,Ppp };
 BootMode bootMode=BootMode::Normal;
+AcousticMode acousticMode=AcousticMode::Ax25;
 uint32_t liveMaxProcessUs=0;
 size_t liveBlocks=0;
 int32_t liveBlock[256*2];
@@ -227,6 +229,9 @@ void setup() {
   }
   String savedBoot=preferences.getString("boot","normal");
   if(!parseBootMode(savedBoot.c_str(),bootMode)){bootMode=BootMode::Normal;preferences.remove("boot");}
+  // Bell 103 is not activated until its carrier and handshake are implemented.
+  // A stale or future preference must never silently replace the working AX.25 path.
+  acousticMode=AcousticMode::Ax25;
   acousticTransport.configure(localCall,remoteCall);
   usbTransport.configure(localCall,remoteCall);
   slipTransport.configure(localCall,remoteCall);
@@ -266,7 +271,7 @@ void setup() {
   if (!writeRegister(0x43,0x07,0x00) || !writeRegister(0x43,0x0d,0xff) ||
       !writeRegister(0x43,0x03,0x6f) || !writeRegister(0x43,0x05,0x00))
     fatal("ERROR: Atomic Voice Base speaker control at 0x43.");
-  Serial.printf("Ready: SRC=%s DEST=%s BOOT=%s; ?=help.\n",localCall,remoteCall,bootModeName(bootMode));
+  Serial.printf("Ready: SRC=%s DEST=%s BOOT=%s ACOUSTIC=%s; ?=help.\n",localCall,remoteCall,bootModeName(bootMode),acousticModeName(acousticMode));
   startLiveReceiver();
   activateHostMode(bootMode);
 }
@@ -541,7 +546,7 @@ void loop() {
     bool resume=liveRx; stopLiveReceiver(false); dumpRecording(); if(resume)startLiveReceiver(); return;
   }
   if (!commandLength && c=='?') {
-    Serial.println("Commands: t <ASCII>; g <UTF-8>; k <UTF8-HEX>; group on|off|show; monitor on|off|show; z <HEX>; y <HEX>; mode ppp; slip on; boot show|normal|slip|ppp|reset; u <HEX>; x <PIDHEX> <HEX>; c <SRC> <DEST>; l=RX; q=stop; r=batch; p=PCM."); return;
+    Serial.println("Commands: t <ASCII>; g <UTF-8>; k <UTF8-HEX>; group on|off|show; monitor on|off|show; acoustic show|ax25|bell103; z <HEX>; y <HEX>; mode ppp; slip on; boot show|normal|slip|ppp|reset; u <HEX>; x <PIDHEX> <HEX>; c <SRC> <DEST>; l=RX; q=stop; r=batch; p=PCM."); return;
   }
   if (c=='\r') return;
   if (c=='\n') {
@@ -581,6 +586,15 @@ void loop() {
     }
     else if(!strcmp(commandLine,"boot show")) {
       Serial.printf("BOOT MODE=%s saved=%s\n",bootModeName(bootMode),preferences.isKey("boot")?"yes":"no");
+    }
+    else if(!strcmp(commandLine,"acoustic show")) {
+      Serial.printf("ACOUSTIC MODE=%s READY=ax25\n",acousticModeName(acousticMode));
+    }
+    else if(!strncmp(commandLine,"acoustic ",9)) {
+      AcousticMode requested;
+      if(!parseAcousticMode(commandLine+9,requested)) Serial.println("ERROR: use acoustic show|ax25|bell103.");
+      else if(requested==AcousticMode::Bell103) Serial.println("ERROR: Bell 103 is not ready in this build; AX.25 remains active.");
+      else Serial.println("ACOUSTIC MODE=ax25 (unchanged).");
     }
     else if(!strcmp(commandLine,"group show")) {
       Serial.printf("GROUP MODE=%s READY=v%u LOCAL=%s GROUP=%s\n",groupRuntime.enabled()?"on":"direct",GroupChatProtocol::VERSION,groupChat.local(),groupRuntime.group());

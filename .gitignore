@@ -35,3 +35,5 @@ outputs/wintun/
 outputs/**/*.wav
 outputs/**/*.pcm
 outputs/**/*.zip
+
+.build/

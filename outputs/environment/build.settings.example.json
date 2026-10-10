@@ -1,0 +1,9 @@
+{
+  "core": "C:/path/to/Arduino15/packages/esp32/hardware/esp32/3.3.2",
+  "sdk": "C:/path/to/Arduino15/packages/esp32/tools/esp32-arduino-libs/idf-release_v5.5-07e9bf49-v1/esp32s3",
+  "compiler_bin": "C:/path/to/Arduino15/packages/esp32/tools/esp-x32/2507/bin",
+  "echo_library": "C:/path/to/Arduino/libraries/M5Atomic-EchoBase/src",
+  "gfx_library": "C:/path/to/Arduino/libraries/M5GFX/src",
+  "build_directory": "C:/path/to/AtomS3R-Acoustic-Modem/.build/firmware",
+  "esptool": "C:/path/to/Arduino15/packages/esp32/tools/esptool_py/5.1.0/esptool.exe"
+}

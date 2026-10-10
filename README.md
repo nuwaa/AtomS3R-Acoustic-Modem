@@ -24,6 +24,8 @@ M5Stack ATOM S3R と ATOMIC ECHO BASE（Atomic Voice Base）を使う、音響 A
 2. [outputs/AtomS3R_AfskRx/AtomS3R_AfskRx.ino](outputs/AtomS3R_AfskRx/AtomS3R_AfskRx.ino) を開き、上記ボード設定を選びます。各 ATOM の USB ポートを指定して検証・書き込みします。既存端末の設定を保ちたい場合、書き込み前に設定と接続先を確認してください。
 3. Android アプリは [outputs/android/AtomUsbChat](outputs/android/AtomUsbChat) を Android Studio で開いて同期し、`app` の debug APK をビルドします。コマンドラインでは同ディレクトリで Windows は `gradlew.bat :app:assembleDebug`、macOS/Linux は `./gradlew :app:assembleDebug` です。
 
+WindowsでESP32-S3のフルビルドを再現する場合は、[build.settings.example.json](outputs/environment/build.settings.example.json) を参考に `outputs/environment/settings.json` を作り、各依存物のローカルパスを設定して [BUILD_BELL103_PHASE1.cmd](BUILD_BELL103_PHASE1.cmd) を実行します。PythonがPATHにない場合は `settings.json` に `"python": "C:/path/to/python.exe"` を追加します。`settings.json` と生成物はGitの対象外です。現在のBell 103開発ブランチでは、各段階のファームウェア検証にこの手順を使用します。
+
 公開用コピーでは、この PC 固有のデバッグ署名ファイルへの絶対パスを Android のビルド設定から除きました。Android 標準のデバッグ署名を使用します。アプリ本体の Java、マニフェスト、リソースは現行ソースをそのまま収録しています。
 
 ## USB 接続と使用
@@ -45,7 +47,7 @@ PC 側は ATOM の USB CDC シリアルポートを使用します。まずシ�
 
 ## 今後
 
-将来、Bell 103 方式の 300 bps 音響モデムを追加し、現行 AX.25/Bell 202 経路と切り替える予定です。この保存版には実装していません。
+`feature/bell103` ブランチでBell 103方式の300 bps音響モデムを段階的に開発中です。現時点では `AcousticMode` の区別とSerialの `acoustic show|ax25|bell103` の入口のみを追加しました。`bell103` は未実装として拒否され、現行AX.25経路が引き続き動作します。Bell 103の接続音・FSK・接続手順・PC/Android画面はまだ実装・実機検証していません。
 
 ## ライセンス
 
