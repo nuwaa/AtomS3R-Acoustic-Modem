@@ -1,1 +1,37 @@
-# Initial bootstrap
+# Local environment and credentials
+**/local.properties
+**/settings.json
+**/*.keystore
+**/*.jks
+**/*.pem
+**/*.key
+**/.env
+**/.env.*
+
+# Build products and IDE caches
+**/.gradle/
+**/.gradle-local/
+**/.idea/
+**/build/
+**/.cache-test/
+**/.android-user-home/
+**/__pycache__/
+**/*.pyc
+**/*.apk
+**/*.aab
+**/*.bin
+**/*.elf
+**/*.map
+**/*.hex
+
+# Bench captures, device backups, and local binaries
+outputs/firmware/
+outputs/firmware-chat/
+outputs/backup/
+outputs/runs/
+outputs/operation/
+outputs/received_files/
+outputs/wintun/
+outputs/**/*.wav
+outputs/**/*.pcm
+outputs/**/*.zip

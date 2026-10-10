@@ -1,0 +1,14 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-feature android:name="android.hardware.usb.host" android:required="true" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application android:theme="@style/AppTheme" android:label="ATOM Chat" android:usesCleartextTraffic="true">
+        <service android:name=".AtomVpnService" android:permission="android.permission.BIND_VPN_SERVICE" android:exported="false">
+            <intent-filter><action android:name="android.net.VpnService"/></intent-filter>
+        </service>
+        <activity android:name=".MainActivity" android:screenOrientation="unspecified" android:windowSoftInputMode="adjustResize" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
