@@ -11,5 +11,6 @@ The repository does not vendor the Arduino core, Arduino libraries, Android SDK,
 | Gradle Wrapper bootstrap JAR | 9.6.0 | https://github.com/gradle/gradle | Apache License 2.0; the wrapper JAR is included so the Android build can bootstrap |
 | pyserial | Environment dependent | https://github.com/pyserial/pyserial | See upstream license |
 | Wintun | Optional | https://www.wintun.net/ | See upstream license and redistribution terms; DLL not included |
+| dbhq-uk/modem `overture.rs` | Reference for Bell 103 dial-up sound sequence | https://github.com/dbhq-uk/modem/blob/main/modem-core/src/overture.rs | MIT; Copyright (c) 2026 DBHQ Ventures Ltd. See [license notice](third_party/DBHQ_MODEM_LICENSE). The Bell 103 overture module acknowledges this reference. |
 
 The project's MIT license does not replace these third-party terms.

@@ -17,6 +17,7 @@
 #include "GroupChatProtocol.h"
 #include "GroupChatRuntime.h"
 #include "AcousticMode.h"
+#include "Bell103Overture.h"
 
 constexpr size_t SAMPLE_RATE = 48000;
 constexpr size_t SAMPLES = SAMPLE_RATE * 3;
@@ -49,6 +50,7 @@ bool pppMode=false;
 enum class BootMode:uint8_t { Normal,Slip,Ppp };
 BootMode bootMode=BootMode::Normal;
 AcousticMode acousticMode=AcousticMode::Ax25;
+Bell103Overture bell103Overture;
 uint32_t liveMaxProcessUs=0;
 size_t liveBlocks=0;
 int32_t liveBlock[256*2];
@@ -71,6 +73,7 @@ const char* bootModeName(BootMode mode);
 bool parseBootMode(const char* text,BootMode& mode);
 void activateHostMode(BootMode mode);
 bool binaryHostMode();
+bool playBell103Overture();
 
 bool writeRegister(uint8_t address,uint8_t reg,uint8_t value) {
   Wire.beginTransmission(address);
@@ -429,6 +432,41 @@ bool audioSink(const int32_t* samples,size_t count,void*) {
   return err==ESP_OK && written==count*2*sizeof(int32_t);
 }
 
+bool playBell103Overture() {
+  if(binaryHostMode()||monitorMode||reliableLink.busy()||groupRuntime.enabled()) {
+    Serial.println("ERROR: Bell 103 tone requires normal, direct, idle mode.");
+    return false;
+  }
+  bool resume=liveRx;
+  stopLiveReceiver(false);
+  screenStatus("B103 DIAL SOUND");
+  Serial.println("BELL103 OVERTURE DEMO: sound only; no connection or data.");
+  if(!speakerEnable(true)) {
+    if(resume)startLiveReceiver();
+    Serial.println("ERROR: Bell 103 speaker enable failed.");
+    return false;
+  }
+  bell103Overture.reset();
+  int32_t block[256*2];
+  uint32_t maxRenderUs=0;
+  unsigned long began=millis();
+  bool ok=true;
+  while(!bell103Overture.finished()) {
+    uint32_t startUs=micros();
+    size_t count=bell103Overture.render(block,256);
+    uint32_t elapsed=micros()-startUs;
+    if(elapsed>maxRenderUs)maxRenderUs=elapsed;
+    if(!count||!audioSink(block,count,nullptr)){ok=false;break;}
+  }
+  int32_t silence[256*2]={};
+  for(int k=0;k<4;++k)if(!audioSink(silence,256,nullptr))ok=false;
+  if(!speakerEnable(false))ok=false;
+  Serial.printf("BELL103 OVERTURE %s samples=%lu elapsed_ms=%lu max_render_us=%lu (demo only)\n",
+                ok?"OK":"FAILED",(unsigned long)bell103Overture.position(),millis()-began,(unsigned long)maxRenderUs);
+  if(resume)startLiveReceiver();
+  return ok;
+}
+
 bool sendPayload(uint8_t pid,const uint8_t* payload,size_t length) {
   if(monitorMode){Serial.println("ERROR: monitor mode is receive-only.");return false;}
   if(!payload||!length||length>220){if(!binaryHostMode())Serial.println("ERROR: payload must be 1..220 bytes.");return false;}
@@ -546,7 +584,7 @@ void loop() {
     bool resume=liveRx; stopLiveReceiver(false); dumpRecording(); if(resume)startLiveReceiver(); return;
   }
   if (!commandLength && c=='?') {
-    Serial.println("Commands: t <ASCII>; g <UTF-8>; k <UTF8-HEX>; group on|off|show; monitor on|off|show; acoustic show|ax25|bell103; z <HEX>; y <HEX>; mode ppp; slip on; boot show|normal|slip|ppp|reset; u <HEX>; x <PIDHEX> <HEX>; c <SRC> <DEST>; l=RX; q=stop; r=batch; p=PCM."); return;
+    Serial.println("Commands: t <ASCII>; g <UTF-8>; k <UTF8-HEX>; group on|off|show; monitor on|off|show; acoustic show|ax25|bell103; bell103 tone; z <HEX>; y <HEX>; mode ppp; slip on; boot show|normal|slip|ppp|reset; u <HEX>; x <PIDHEX> <HEX>; c <SRC> <DEST>; l=RX; q=stop; r=batch; p=PCM."); return;
   }
   if (c=='\r') return;
   if (c=='\n') {
@@ -589,6 +627,9 @@ void loop() {
     }
     else if(!strcmp(commandLine,"acoustic show")) {
       Serial.printf("ACOUSTIC MODE=%s READY=ax25\n",acousticModeName(acousticMode));
+    }
+    else if(!strcmp(commandLine,"bell103 tone")) {
+      playBell103Overture();
     }
     else if(!strncmp(commandLine,"acoustic ",9)) {
       AcousticMode requested;
