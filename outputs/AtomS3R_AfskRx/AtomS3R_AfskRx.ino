@@ -19,6 +19,7 @@
 #include "AcousticMode.h"
 #include "Bell103Overture.h"
 #include "Bell103Fsk.h"
+#include "Bell103Session.h"
 
 constexpr size_t SAMPLE_RATE = 48000;
 constexpr size_t SAMPLES = SAMPLE_RATE * 3;
@@ -80,6 +81,7 @@ bool playBell103Overture();
 bool bell103SendDiagnostic(const uint8_t* text,size_t length,Bell103Role role);
 bool bell103ReceiveDiagnostic(Bell103Role role);
 bool bell103SelfTest();
+bool bell103SessionSelfTest();
 
 bool writeRegister(uint8_t address,uint8_t reg,uint8_t value) {
   Wire.beginTransmission(address);
@@ -559,6 +561,30 @@ bool bell103SelfTest() {
   return ok;
 }
 
+bool bell103SessionSelfTest() {
+  Bell103Session caller,answerer;
+  constexpr uint32_t ID=0x12345678;
+  caller.startCaller(ID,0);answerer.startAnswerer();
+  const Bell103Message sequence[]={Bell103Message::Hello,Bell103Message::Ready,
+      Bell103Message::Confirm,Bell103Message::Established};
+  bool ok=true;
+  for(unsigned i=0;i<4&&ok;++i){
+    Bell103Session& sender=(i&1)?answerer:caller;
+    Bell103Session& receiver=(i&1)?caller:answerer;
+    Bell103Control outgoing{},incoming{};uint8_t bytes[Bell103Session::CONTROL_BYTES];
+    ok=sender.action(i*1000,outgoing)&&outgoing.message==sequence[i]&&
+       Bell103Session::encode(outgoing,bytes,sizeof(bytes))&&
+       Bell103Session::decode(bytes,sizeof(bytes),incoming)&&incoming.session==ID;
+    if(ok){sender.sent(i*1000);receiver.received(incoming,i*1000);}
+  }
+  ok=ok&&caller.connected()&&answerer.connected();
+  Bell103Control stale{Bell103Message::Bye,ID+1};
+  caller.received(stale,5000);ok=ok&&caller.connected();
+  caller.received({Bell103Message::Bye,ID},6000);ok=ok&&!caller.connected();
+  Serial.println(ok?"BELL103 SESSION SELFTEST PASS":"BELL103 SESSION SELFTEST FAILED");
+  return ok;
+}
+
 bool sendPayload(uint8_t pid,const uint8_t* payload,size_t length) {
   if(monitorMode){Serial.println("ERROR: monitor mode is receive-only.");return false;}
   if(!payload||!length||length>220){if(!binaryHostMode())Serial.println("ERROR: payload must be 1..220 bytes.");return false;}
@@ -676,7 +702,7 @@ void loop() {
     bool resume=liveRx; stopLiveReceiver(false); dumpRecording(); if(resume)startLiveReceiver(); return;
   }
   if (!commandLength && c=='?') {
-    Serial.println("Commands: t <ASCII>; g <UTF-8>; k <UTF8-HEX>; group on|off|show; monitor on|off|show; acoustic show|ax25|bell103; bell103 tone|selftest|rx originate|rx answer|tx originate <text>|tx answer <text>; z <HEX>; y <HEX>; mode ppp; slip on; boot show|normal|slip|ppp|reset; u <HEX>; x <PIDHEX> <HEX>; c <SRC> <DEST>; l=RX; q=stop; r=batch; p=PCM."); return;
+    Serial.println("Commands: t <ASCII>; g <UTF-8>; k <UTF8-HEX>; group on|off|show; monitor on|off|show; acoustic show|ax25|bell103; bell103 tone|selftest|session selftest|rx originate|rx answer|tx originate <text>|tx answer <text>; z <HEX>; y <HEX>; mode ppp; slip on; boot show|normal|slip|ppp|reset; u <HEX>; x <PIDHEX> <HEX>; c <SRC> <DEST>; l=RX; q=stop; r=batch; p=PCM."); return;
   }
   if (c=='\r') return;
   if (c=='\n') {
@@ -725,6 +751,9 @@ void loop() {
     }
     else if(!strcmp(commandLine,"bell103 selftest")) {
       bell103SelfTest();
+    }
+    else if(!strcmp(commandLine,"bell103 session selftest")) {
+      bell103SessionSelfTest();
     }
     else if(!strcmp(commandLine,"bell103 rx originate")) {
       bell103ReceiveDiagnostic(Bell103Role::Originate);

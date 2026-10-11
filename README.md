@@ -51,6 +51,8 @@ PC 側は ATOM の USB CDC シリアルポートを使用します。まずシ�
 
 Phase 3では、独立したBell 103 FSK診断経路を追加しました。`bell103 selftest` は送受両バンドの合成PCMをCRCまで自己検査し、`bell103 rx answer` と `bell103 tx originate <UTF-8>`、または逆の役割の組み合わせで6秒録音後に短文を復号できます。送信最大80 UTF-8バイト、300 bps、8N1、役割別の2バンド、独自のB103同期とCRC-16を使用します。**この診断経路は未接続の一方向送信で、受信準備の確認・ACK・再送はまだありません**。`acoustic bell103` は接続手順の実装まで拒否され、現行AX.25経路が引き続き動作します。PC/AndroidのBell 103操作画面も未実装です。
 
+Phase 3の空中試験では、COM5とCOM6の2台で両バンド・両方向の短文をCRC正常で受信しました。再現には `TEST_BELL103_AIR.cmd` を使用します。Phase 4では独立した `Bell103Session` に、HELLO→READY→CONFIRM→ESTABLISHEDの接続制御、セッションIDの照合、重複制御メッセージへの応答、タイムアウトを追加し始めました。`bell103 session selftest` はこの状態遷移の内部試験です。**接続制御を空中で動かす統合、データACK・再送、通常チャットへの切替は未実装です。**
+
 ## ライセンス
 
 このリポジトリで作成したソースは [MIT License](LICENSE) です。第三者の依存物は各配布元のライセンスに従います。
