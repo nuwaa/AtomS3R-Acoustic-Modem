@@ -22,20 +22,29 @@ def main():
             send(answerer, "bell103 auto answerer")
             send(caller, "bell103 auto caller")
             connected = {args.caller: False, args.answerer: False}
-            deadline = time.monotonic() + 90
+            answerer_ready = overture_done = hello_after_overture = False
+            deadline = time.monotonic() + 110
             while time.monotonic() < deadline and not all(connected.values()):
                 for name, port in ((args.caller, caller), (args.answerer, answerer)):
                     line = port.readline().decode("utf-8", "replace").strip()
                     if not line:
                         continue
                     print(f"{name}: {line}", flush=True)
+                    if name == args.answerer and "BELL103 AUTO RX READY" in line:
+                        answerer_ready = True
+                    if name == args.caller and "BELL103 OVERTURE OK" in line and "HELLO follows silence" in line:
+                        overture_done = True
+                    if name == args.caller and "BELL103 AUTO TX CONTROL type=1" in line:
+                        if not overture_done:
+                            raise RuntimeError("caller sent HELLO before overture boundary")
+                        hello_after_overture = True
                     if "BELL103 AUTO CONNECT TIMEOUT" in line or "BELL103 AUTO TX CONTROL FAILED" in line:
                         raise RuntimeError(f"{name}: {line}")
                     if "BELL103 AUTO RX CONTROL" in line and "state=connected" in line:
                         connected[name] = True
-            if not all(connected.values()):
-                raise RuntimeError(f"connection timeout: {connected}")
-            print("TEST PASS: both ATOMs connected without TX/RX step commands", flush=True)
+            if not all(connected.values()) or not answerer_ready or not hello_after_overture:
+                raise RuntimeError(f"connection/boundary failed: connected={connected}, answerer_ready={answerer_ready}, overture_hello={hello_after_overture}")
+            print("TEST PASS: overture boundary and autonomous Bell 103 connection", flush=True)
         finally:
             for name, port in ((args.caller, caller), (args.answerer, answerer)):
                 try:

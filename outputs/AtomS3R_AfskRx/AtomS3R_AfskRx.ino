@@ -83,7 +83,7 @@ const char* bootModeName(BootMode mode);
 bool parseBootMode(const char* text,BootMode& mode);
 void activateHostMode(BootMode mode);
 bool binaryHostMode();
-bool playBell103Overture();
+bool playBell103Overture(bool demo=true);
 bool bell103SendDiagnostic(const uint8_t* text,size_t length,Bell103Role role);
 bool bell103ReceiveDiagnostic(Bell103Role role);
 bool bell103SelfTest();
@@ -454,7 +454,7 @@ bool audioSink(const int32_t* samples,size_t count,void*) {
   return err==ESP_OK && written==count*2*sizeof(int32_t);
 }
 
-bool playBell103Overture() {
+bool playBell103Overture(bool demo) {
   if(binaryHostMode()||monitorMode||reliableLink.busy()||groupRuntime.enabled()) {
     Serial.println("ERROR: Bell 103 tone requires normal, direct, idle mode.");
     return false;
@@ -462,7 +462,8 @@ bool playBell103Overture() {
   bool resume=liveRx;
   stopLiveReceiver(false);
   screenStatus("B103 DIAL SOUND");
-  Serial.println("BELL103 OVERTURE DEMO: sound only; no connection or data.");
+  if(demo)Serial.println("BELL103 OVERTURE DEMO: sound only; no connection or data.");
+  else Serial.println("BELL103 AUTO OVERTURE START; answerer must be listening.");
   if(!speakerEnable(true)) {
     if(resume)startLiveReceiver();
     Serial.println("ERROR: Bell 103 speaker enable failed.");
@@ -481,10 +482,12 @@ bool playBell103Overture() {
     if(!count||!audioSink(block,count,nullptr)){ok=false;break;}
   }
   int32_t silence[256*2]={};
-  for(int k=0;k<4;++k)if(!audioSink(silence,256,nullptr))ok=false;
+  // Keep a clear acoustic boundary before the first Bell 103 HELLO burst.
+  for(int k=0;k<48;++k)if(!audioSink(silence,256,nullptr))ok=false;
   if(!speakerEnable(false))ok=false;
-  Serial.printf("BELL103 OVERTURE %s samples=%lu elapsed_ms=%lu max_render_us=%lu (demo only)\n",
-                ok?"OK":"FAILED",(unsigned long)bell103Overture.position(),millis()-began,(unsigned long)maxRenderUs);
+  Serial.printf("BELL103 OVERTURE %s samples=%lu elapsed_ms=%lu max_render_us=%lu%s\n",
+                ok?"OK":"FAILED",(unsigned long)bell103Overture.position(),millis()-began,
+                (unsigned long)maxRenderUs,demo?" (demo only)":"; HELLO follows silence");
   if(resume)startLiveReceiver();
   return ok;
 }
@@ -768,10 +771,16 @@ void bell103DataCommand(const char* command,size_t length) {
 
 void bell103AutoCommand(const char* command) {
   if(!strcmp(command,"bell103 auto caller")||!strcmp(command,"bell103 auto answerer")){
-    bell103SessionCommand(!strcmp(command,"bell103 auto caller")?
+    bool caller=!strcmp(command,"bell103 auto caller");
+    bell103SessionCommand(caller?
                           "bell103 session caller":"bell103 session answerer");
     if(acousticMode==AcousticMode::Bell103){
+      if(caller&&!playBell103Overture(false)){
+        Serial.println("BELL103 AUTO OVERTURE FAILED; returning to AX.25.");
+        bell103SessionCommand("bell103 session stop");return;
+      }
       bell103Auto=true;bell103AutoFailureReported=false;
+      Serial.println(caller?"BELL103 AUTO HELLO READY":"BELL103 AUTO RX READY");
       Serial.println("BELL103 AUTO START; session handshake runs on ATOM.");
     }
     return;

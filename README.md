@@ -59,7 +59,9 @@ Phase 4の実機診断用に `bell103 session caller|answerer|tx|rx|show|stop` �
 
 次の段階として `bell103 auto caller|answerer|show|stop` を追加しました。この試験版はATOM自身が録音窓を繰り返し、接続制御・DATA・ACKの送受と再送判定を進めます。`TEST_BELL103_AUTO_CONNECT.cmd` は2台に開始指示を1回ずつ送り、以後PCからTX/RXステップ指示を出さずに接続を確認します。`TEST_BELL103_AUTO_DATA.cmd` では2台間の接続に続き、短文AUTO01/AUTO02とACKが双方向に届くことを確認しました。続けて `TEST_AX25_DIRECT_REGRESSION.cmd` でAX.25直接チャットの双方向が通過しました。録音窓の境界でフレームを取りこぼす可能性があり、長時間の連続通信は未検証です。
 
-Phase 5のPCブラウザ画面とAndroidアプリには、Bell 103の発呼・応答・切断、接続表示、UTF-8短文の送受信を追加しました。PC画面は [START_BELL103_PC_CHAT.cmd](START_BELL103_PC_CHAT.cmd) または `python outputs/usb_chat_web.py --port COM6` で起動し、Android APKは [BUILD_BELL103_ANDROID.cmd](BUILD_BELL103_ANDROID.cmd) で作れます。Android 2台へワイヤレスADBで入れる場合は、各端末でVPNを一時切断してから [INSTALL_BELL103_ANDROID_WIRELESS.cmd](INSTALL_BELL103_ANDROID_WIRELESS.cmd) を1回ずつ実行します。Bell 103の送信はACKを待って次の本文を受け付けます。Bell 103中はAX.25の直接・グループ選択およびAndroidのIPトンネル操作を無効にし、切断後はAX.25に戻します。Android APKのビルド、Android 2台およびPC↔AndroidでのBell 103双方向本文・ACK、切断後のAX.25双方向チャットは実機で通過しました。接続音の自動再生と接続手順との境界同期はまだ別々の診断経路であり、統合試験は未実施です。
+Phase 5のPCブラウザ画面とAndroidアプリには、Bell 103の発呼・応答・切断、接続表示、UTF-8短文の送受信を追加しました。PC画面は [START_BELL103_PC_CHAT.cmd](START_BELL103_PC_CHAT.cmd) または `python outputs/usb_chat_web.py --port COM6` で起動し、Android APKは [BUILD_BELL103_ANDROID.cmd](BUILD_BELL103_ANDROID.cmd) で作れます。Android 2台へワイヤレスADBで入れる場合は、各端末でVPNを一時切断してから [INSTALL_BELL103_ANDROID_WIRELESS.cmd](INSTALL_BELL103_ANDROID_WIRELESS.cmd) を1回ずつ実行します。Bell 103の送信はACKを待って次の本文を受け付けます。Bell 103中はAX.25の直接・グループ選択およびAndroidのIPトンネル操作を無効にし、切断後はAX.25に戻します。Android APKのビルド、Android 2台およびPC↔AndroidでのBell 103双方向本文・ACK、切断後のAX.25双方向チャットは実機で通過しました。
+
+発呼側の `bell103 auto caller` はダイヤルアップ風の接続音を再生し、約250msの無音区間を置いてHELLOを送ります。応答側の `bell103 auto answerer` は先に受信待ちに入ります。READY/CONFIRM/ESTABLISHEDの往復が完了するまで本文は送れません。2台の実機で接続音→HELLOの順序、自動接続、双方向本文・ACKを確認しました。PCブラウザから発呼してAndroidが応答する操作でも、接続音、双方向本文・ACK、切断後のAX.25直接・グループチャットが通過しました。接続音は再現音であり、V.34の実際のネゴシエーションではありません。録音窓の境界や騒音下を含む長時間試験は未実施です。
 
 ## ライセンス
 
