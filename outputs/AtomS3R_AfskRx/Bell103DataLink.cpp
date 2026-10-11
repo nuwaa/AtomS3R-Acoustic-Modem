@@ -3,7 +3,7 @@
 
 void Bell103DataLink::reset() {
   session_=0;txSequence_=rxSequence_=1;ackSequence_=0;textLength_=0;
-  awaitingAck_=pendingData_=pendingAck_=failed_=false;attempts_=0;lastSent_=0;
+  awaitingAck_=pendingData_=failed_=false;pendingAcks_=0;attempts_=0;lastSent_=0;
 }
 
 void Bell103DataLink::begin(uint32_t session) {reset();session_=session;}
@@ -24,7 +24,7 @@ bool Bell103DataLink::next(uint32_t now,uint8_t* burst,size_t capacity,size_t& l
                            Bell103DataKind& kind) {
   length=0;
   if(!session_||!burst)return false;
-  if(pendingAck_){
+  if(pendingAcks_){
     if(capacity<HEADER_BYTES)return false;
     header(burst,Bell103DataKind::Ack,session_,ackSequence_);
     kind=Bell103DataKind::Ack;length=HEADER_BYTES;return true;
@@ -39,7 +39,7 @@ bool Bell103DataLink::next(uint32_t now,uint8_t* burst,size_t capacity,size_t& l
 }
 
 void Bell103DataLink::sent(Bell103DataKind kind,uint32_t now) {
-  if(kind==Bell103DataKind::Ack){pendingAck_=false;return;}
+  if(kind==Bell103DataKind::Ack){if(pendingAcks_)--pendingAcks_;return;}
   if(kind==Bell103DataKind::Data&&awaitingAck_){
     pendingData_=false;lastSent_=now;++attempts_;
   }
@@ -65,10 +65,10 @@ bool Bell103DataLink::received(const uint8_t* burst,size_t length,uint8_t* text,
     size_t n=length-HEADER_BYTES;
     if(!text||n>capacity)return false;
     memcpy(text,burst+HEADER_BYTES,n);textLength=n;
-    ackSequence_=sequence;pendingAck_=true;++rxSequence_;return true;
+    ackSequence_=sequence;pendingAcks_=2;++rxSequence_;return true;
   }
   if(sequence==(uint16_t)(rxSequence_-1)){
-    ackSequence_=sequence;pendingAck_=true;
+    ackSequence_=sequence;pendingAcks_=2;
   }
   return false;
 }

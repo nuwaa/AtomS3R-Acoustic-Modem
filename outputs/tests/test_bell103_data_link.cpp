@@ -17,6 +17,11 @@ int main() {
   assert(textLength==0);
   assert(b.next(1,ack,sizeof(ack),ackLength,kind));
   assert(kind==Bell103DataKind::Ack);b.sent(kind,1);
+  // A second ACK gives the peer another complete burst if the first one
+  // straddled the edge of its PCM capture window.
+  assert(b.next(2,ack,sizeof(ack),ackLength,kind));
+  assert(kind==Bell103DataKind::Ack);b.sent(kind,2);
+  assert(!b.next(3,ack,sizeof(ack),ackLength,kind));
   assert(!a.received(ack,ackLength,text,sizeof(text),textLength));
   assert(!a.awaitingAck()&&a.pendingSequence()==2);
 

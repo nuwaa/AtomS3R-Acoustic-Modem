@@ -11,8 +11,10 @@ class Bell103DataLink {
  public:
   static constexpr size_t HEADER_BYTES=10;
   static constexpr size_t MAX_TEXT=70; // 80-byte FSK burst minus header
-  static constexpr uint32_t RETRY_MS=8000;
-  static constexpr uint8_t MAX_ATTEMPTS=4;
+  // A receive window can last nine seconds. Leave time for the peer to
+  // finish that window and send its ACK before retransmitting.
+  static constexpr uint32_t RETRY_MS=18000;
+  static constexpr uint8_t MAX_ATTEMPTS=6;
   void begin(uint32_t session);
   void reset();
   bool queue(const uint8_t* text,size_t length);
@@ -28,7 +30,8 @@ class Bell103DataLink {
   uint32_t session_=0;
   uint16_t txSequence_=1,rxSequence_=1,ackSequence_=0;
   uint8_t text_[MAX_TEXT];size_t textLength_=0;
-  bool awaitingAck_=false,pendingData_=false,pendingAck_=false,failed_=false;
+  bool awaitingAck_=false,pendingData_=false,failed_=false;
+  uint8_t pendingAcks_=0;
   uint8_t attempts_=0;uint32_t lastSent_=0;
   static void header(uint8_t* out,Bell103DataKind kind,uint32_t session,uint16_t sequence);
 };
