@@ -20,6 +20,7 @@
 #include "Bell103Overture.h"
 #include "Bell103Fsk.h"
 #include "Bell103Session.h"
+#include "Bell103DataLink.h"
 
 constexpr size_t SAMPLE_RATE = 48000;
 constexpr size_t SAMPLES = SAMPLE_RATE * 3;
@@ -56,6 +57,7 @@ Bell103Overture bell103Overture;
 Bell103FskTx bell103Tx;
 Bell103FskRx bell103Rx;
 Bell103Session bell103Session;
+Bell103DataLink bell103Data;
 Bell103Role bell103SessionRole=Bell103Role::Originate;
 uint32_t liveMaxProcessUs=0;
 size_t liveBlocks=0;
@@ -84,9 +86,11 @@ bool bell103SendDiagnostic(const uint8_t* text,size_t length,Bell103Role role);
 bool bell103ReceiveDiagnostic(Bell103Role role);
 bool bell103SelfTest();
 bool bell103SessionSelfTest();
+bool bell103DataSelfTest();
 bool bell103SendBurst(const uint8_t* payload,size_t length,Bell103Role role);
 bool bell103ReceiveBurst(Bell103Role role,uint8_t* payload,size_t capacity,size_t& length);
 void bell103SessionCommand(const char* command);
+void bell103DataCommand(const char* command,size_t length);
 
 bool writeRegister(uint8_t address,uint8_t reg,uint8_t value) {
   Wire.beginTransmission(address);
@@ -601,6 +605,35 @@ bool bell103SessionSelfTest() {
   return ok;
 }
 
+bool bell103DataSelfTest() {
+  Bell103DataLink a,b;a.begin(0x12345678);b.begin(0x12345678);
+  const uint8_t message[]={'B','1','0','3',' ','D','A','T','A'};
+  uint8_t burst[80],reply[80],delivered[70];
+  size_t length=0,replyLength=0,deliveredLength=0;
+  Bell103DataKind kind=Bell103DataKind::Ack;
+  bool ok=a.queue(message,sizeof(message))&&
+          a.next(0,burst,sizeof(burst),length,kind)&&kind==Bell103DataKind::Data;
+  if(ok){
+    a.sent(kind,0);
+    ok=b.received(burst,length,delivered,sizeof(delivered),deliveredLength)&&
+       deliveredLength==sizeof(message)&&!memcmp(delivered,message,sizeof(message));
+  }
+  if(ok){
+    size_t duplicateLength=0;
+    ok=!b.received(burst,length,delivered,sizeof(delivered),duplicateLength)&&
+       duplicateLength==0&&b.next(1000,reply,sizeof(reply),replyLength,kind)&&
+       kind==Bell103DataKind::Ack;
+  }
+  if(ok){
+    b.sent(kind,1000);
+    size_t none=0;
+    ok=!a.received(reply,replyLength,delivered,sizeof(delivered),none)&&
+       !a.awaitingAck()&&a.pendingSequence()==2;
+  }
+  Serial.println(ok?"BELL103 DATA SELFTEST PASS":"BELL103 DATA SELFTEST FAILED");
+  return ok;
+}
+
 const char* bell103SessionStateName(Bell103SessionState state) {
   switch(state){
     case Bell103SessionState::Idle:return "idle";
@@ -620,6 +653,7 @@ void bell103SessionCommand(const char* command) {
     }
     stopLiveReceiver(false);
     acousticTransport.resetReceiver();speakerEnable(false);
+    bell103Data.reset();
     bool caller=!strcmp(command,"bell103 session caller");
     bell103SessionRole=caller?Bell103Role::Originate:Bell103Role::Answer;
     if(caller)bell103Session.startCaller(esp_random(),millis());
@@ -632,7 +666,7 @@ void bell103SessionCommand(const char* command) {
     return;
   }
   if(!strcmp(command,"bell103 session stop")){
-    bell103Session.reset();acousticMode=AcousticMode::Ax25;
+    bell103Session.reset();bell103Data.reset();acousticMode=AcousticMode::Ax25;
     speakerEnable(false);startLiveReceiver();
     Serial.println("BELL103 SESSION STOP; ACOUSTIC MODE=ax25");return;
   }
@@ -664,13 +698,65 @@ void bell103SessionCommand(const char* command) {
        !Bell103Session::decode(bytes,length,incoming)){
       Serial.println("BELL103 SESSION RX NO VALID CONTROL");return;
     }
+    bool wasConnected=bell103Session.connected();
     bell103Session.received(incoming,millis());
+    if(!wasConnected&&bell103Session.connected())bell103Data.begin(bell103Session.session());
     Serial.printf("BELL103 SESSION RX type=%u id=%lu state=%s\n",
                   (unsigned)incoming.message,(unsigned long)incoming.session,
                   bell103SessionStateName(bell103Session.state()));
     screenStatus(bell103Session.connected()?"B103 CONNECTED":"B103 HANDSHAKE");return;
   }
   Serial.println("ERROR: bell103 session caller|answerer|tx|rx|show|stop.");
+}
+
+void bell103DataCommand(const char* command,size_t length) {
+  if(acousticMode!=AcousticMode::Bell103||!bell103Session.connected()){
+    Serial.println("ERROR: Bell 103 session is not connected.");return;
+  }
+  if(!strncmp(command,"bell103 data send ",18)){
+    size_t textLength=length-18;
+    if(!bell103Data.queue((const uint8_t*)command+18,textLength)){
+      Serial.println("BELL103 DATA QUEUE FAILED (1..70 UTF-8 bytes, one outstanding frame).");return;
+    }
+    Serial.printf("BELL103 DATA QUEUED seq=%u len=%u\n",(unsigned)bell103Data.pendingSequence(),(unsigned)textLength);
+    return;
+  }
+  if(!strcmp(command,"bell103 data tx")){
+    uint8_t bytes[80];size_t burstLength=0;Bell103DataKind kind=Bell103DataKind::Data;
+    if(!bell103Data.next(millis(),bytes,sizeof(bytes),burstLength,kind)){
+      Serial.println(bell103Data.failed()?"BELL103 DATA RETRIES EXHAUSTED":"BELL103 DATA NO TX PENDING");return;
+    }
+    if(!bell103SendBurst(bytes,burstLength,bell103SessionRole)){
+      Serial.println("BELL103 DATA TX FAILED");return;
+    }
+    bell103Data.sent(kind,millis());
+    Serial.printf("BELL103 DATA TX type=%u seq=%u len=%u\n",(unsigned)kind,
+                  (unsigned)((uint16_t)bytes[8]|((uint16_t)bytes[9]<<8)),(unsigned)burstLength);
+    return;
+  }
+  if(!strcmp(command,"bell103 data rx")){
+    uint8_t bytes[81],text[71];size_t burstLength=0,textLength=0;
+    if(!bell103ReceiveBurst(bell103SessionRole,bytes,sizeof(bytes),burstLength)){
+      Serial.println("BELL103 DATA RX NO VALID FRAME");return;
+    }
+    bool awaiting=bell103Data.awaitingAck();
+    bool delivered=bell103Data.received(bytes,burstLength,text,sizeof(text)-1,textLength);
+    if(delivered){
+      text[textLength]=0;
+      Serial.printf("BELL103 DATA RX NEW len=%u text=",(unsigned)textLength);
+      Serial.write(text,textLength);Serial.println();
+      screenStatus("B103 DATA RX");screenText(text,textLength);
+    }else if(burstLength==Bell103DataLink::HEADER_BYTES&&bytes[0]=='B'&&bytes[1]=='D'&&
+             bytes[3]==(uint8_t)Bell103DataKind::Ack&&awaiting&&!bell103Data.awaitingAck()){
+      Serial.println("BELL103 DATA ACK OK");
+    }else Serial.println("BELL103 DATA RX DUPLICATE OR IGNORED");
+    return;
+  }
+  if(!strcmp(command,"bell103 data show")){
+    Serial.printf("BELL103 DATA awaiting_ack=%u failed=%u next_seq=%u\n",
+                  bell103Data.awaitingAck(),bell103Data.failed(),(unsigned)bell103Data.pendingSequence());return;
+  }
+  Serial.println("ERROR: bell103 data send <UTF-8>|tx|rx|show.");
 }
 
 bool sendPayload(uint8_t pid,const uint8_t* payload,size_t length) {
@@ -795,8 +881,14 @@ void loop() {
   if (c=='\r') return;
   if (c=='\n') {
     commandLine[commandLength]=0;
-    if(!strncmp(commandLine,"bell103 session ",16)){
+    if(!strcmp(commandLine,"bell103 data selftest")){
+      bell103DataSelfTest();
+    }
+    else if(!strncmp(commandLine,"bell103 session ",16)){
       bell103SessionCommand(commandLine);
+    }
+    else if(!strncmp(commandLine,"bell103 data ",13)){
+      bell103DataCommand(commandLine,commandLength);
     }
     else if(acousticMode==AcousticMode::Bell103 && strcmp(commandLine,"acoustic show") &&
             strcmp(commandLine,"acoustic ax25")){
