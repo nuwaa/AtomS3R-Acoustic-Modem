@@ -59,6 +59,8 @@ Bell103FskRx bell103Rx;
 Bell103Session bell103Session;
 Bell103DataLink bell103Data;
 Bell103Role bell103SessionRole=Bell103Role::Originate;
+bool bell103Auto=false;
+bool bell103AutoFailureReported=false;
 uint32_t liveMaxProcessUs=0;
 size_t liveBlocks=0;
 int32_t liveBlock[256*2];
@@ -88,9 +90,12 @@ bool bell103SelfTest();
 bool bell103SessionSelfTest();
 bool bell103DataSelfTest();
 bool bell103SendBurst(const uint8_t* payload,size_t length,Bell103Role role);
-bool bell103ReceiveBurst(Bell103Role role,uint8_t* payload,size_t capacity,size_t& length);
+bool bell103ReceiveBurst(Bell103Role role,uint8_t* payload,size_t capacity,size_t& length,
+                         unsigned seconds=6,bool announce=true);
 void bell103SessionCommand(const char* command);
 void bell103DataCommand(const char* command,size_t length);
+void bell103AutoCommand(const char* command);
+void serviceBell103Auto();
 
 bool writeRegister(uint8_t address,uint8_t reg,uint8_t value) {
   Wire.beginTransmission(address);
@@ -512,26 +517,27 @@ bool bell103SendDiagnostic(const uint8_t* text,size_t length,Bell103Role role) {
   return bell103SendBurst(text,length,role);
 }
 
-bool bell103ReceiveBurst(Bell103Role role,uint8_t* text,size_t capacity,size_t& length) {
+bool bell103ReceiveBurst(Bell103Role role,uint8_t* text,size_t capacity,size_t& length,
+                         unsigned seconds,bool announce) {
   length=0;
-  if(!text||!capacity)return false;
-  constexpr size_t MAX_SAMPLES=6*SAMPLE_RATE;
-  int16_t* samples=(int16_t*)heap_caps_malloc(MAX_SAMPLES*sizeof(int16_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+  if(!text||!capacity||seconds<1||seconds>9)return false;
+  const size_t maxSamples=(size_t)seconds*SAMPLE_RATE;
+  int16_t* samples=(int16_t*)heap_caps_malloc(maxSamples*sizeof(int16_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
   if(!samples){Serial.println("ERROR: Bell 103 capture allocation failed.");return false;}
   bool resume=liveRx;stopLiveReceiver(false);prepareReceiver();
-  screenStatus("B103 RX 6 SEC");
-  Serial.println("BELL103 REC 6 seconds -- transmit NOW");
+  screenStatus(announce?"B103 RX 6 SEC":"B103 AUTO RX");
+  if(announce)Serial.printf("BELL103 REC %u seconds -- transmit NOW\n",seconds);
   int32_t block[256*2];bool ok=true;
   if(!capture(12000,false))ok=false; // 250 ms warm-up
-  for(size_t pos=0;ok&&pos<MAX_SAMPLES;){
-    size_t count=MAX_SAMPLES-pos;if(count>256)count=256;
+  for(size_t pos=0;ok&&pos<maxSamples;){
+    size_t count=maxSamples-pos;if(count>256)count=256;
     size_t received=0;
     esp_err_t err=i2s_channel_read(audio.rxChan(),block,count*2*sizeof(int32_t),&received,1000);
     if(err!=ESP_OK||received!=count*2*sizeof(int32_t)){ok=false;break;}
     for(size_t i=0;i<count;++i)samples[pos+i]=(int16_t)(block[2*i]>>16);
     pos+=count;
   }
-  if(ok)ok=bell103Rx.decode(samples,MAX_SAMPLES,role,text,capacity,length);
+  if(ok)ok=bell103Rx.decode(samples,maxSamples,role,text,capacity,length);
   heap_caps_free(samples);
   if(resume)startLiveReceiver();
   return ok;
@@ -666,7 +672,7 @@ void bell103SessionCommand(const char* command) {
     return;
   }
   if(!strcmp(command,"bell103 session stop")){
-    bell103Session.reset();bell103Data.reset();acousticMode=AcousticMode::Ax25;
+    bell103Auto=false;bell103Session.reset();bell103Data.reset();acousticMode=AcousticMode::Ax25;
     speakerEnable(false);startLiveReceiver();
     Serial.println("BELL103 SESSION STOP; ACOUSTIC MODE=ax25");return;
   }
@@ -718,6 +724,7 @@ void bell103DataCommand(const char* command,size_t length) {
     if(!bell103Data.queue((const uint8_t*)command+18,textLength)){
       Serial.println("BELL103 DATA QUEUE FAILED (1..70 UTF-8 bytes, one outstanding frame).");return;
     }
+    bell103AutoFailureReported=false;
     Serial.printf("BELL103 DATA QUEUED seq=%u len=%u\n",(unsigned)bell103Data.pendingSequence(),(unsigned)textLength);
     return;
   }
@@ -757,6 +764,79 @@ void bell103DataCommand(const char* command,size_t length) {
                   bell103Data.awaitingAck(),bell103Data.failed(),(unsigned)bell103Data.pendingSequence());return;
   }
   Serial.println("ERROR: bell103 data send <UTF-8>|tx|rx|show.");
+}
+
+void bell103AutoCommand(const char* command) {
+  if(!strcmp(command,"bell103 auto caller")||!strcmp(command,"bell103 auto answerer")){
+    bell103SessionCommand(!strcmp(command,"bell103 auto caller")?
+                          "bell103 session caller":"bell103 session answerer");
+    if(acousticMode==AcousticMode::Bell103){
+      bell103Auto=true;bell103AutoFailureReported=false;
+      Serial.println("BELL103 AUTO START; session handshake runs on ATOM.");
+    }
+    return;
+  }
+  if(!strcmp(command,"bell103 auto stop")){
+    bell103SessionCommand("bell103 session stop");return;
+  }
+  if(!strcmp(command,"bell103 auto show")){
+    Serial.printf("BELL103 AUTO=%u state=%s awaiting_ack=%u\n",bell103Auto,
+                  bell103SessionStateName(bell103Session.state()),bell103Data.awaitingAck());return;
+  }
+  Serial.println("ERROR: bell103 auto caller|answerer|show|stop.");
+}
+
+void serviceBell103Auto() {
+  if(!bell103Auto||acousticMode!=AcousticMode::Bell103)return;
+  Bell103Control control{};uint8_t burst[81];size_t length=0;
+  Bell103SessionState before=bell103Session.state();
+  if(bell103Session.action(millis(),control)){
+    if(Bell103Session::encode(control,burst,sizeof(burst))&&
+       bell103SendBurst(burst,Bell103Session::CONTROL_BYTES,bell103SessionRole)){
+      bell103Session.sent(millis());
+      Serial.printf("BELL103 AUTO TX CONTROL type=%u\n",(unsigned)control.message);
+    }else Serial.println("BELL103 AUTO TX CONTROL FAILED");
+    return;
+  }
+  if(before!=Bell103SessionState::Idle&&bell103Session.state()==Bell103SessionState::Idle){
+    Serial.println("BELL103 AUTO CONNECT TIMEOUT; returning to AX.25.");
+    bell103SessionCommand("bell103 session stop");return;
+  }
+  if(bell103Session.connected()){
+    Bell103DataKind kind=Bell103DataKind::Data;
+    if(bell103Data.next(millis(),burst,sizeof(burst),length,kind)){
+      if(bell103SendBurst(burst,length,bell103SessionRole)){
+        bell103Data.sent(kind,millis());
+        Serial.printf("BELL103 AUTO TX DATA type=%u seq=%u\n",(unsigned)kind,
+                      (unsigned)((uint16_t)burst[8]|((uint16_t)burst[9]<<8)));
+      }else Serial.println("BELL103 AUTO TX DATA FAILED");
+      return;
+    }
+    if(bell103Data.failed()&&!bell103AutoFailureReported){
+      bell103AutoFailureReported=true;Serial.println("BELL103 AUTO DATA RETRIES EXHAUSTED");
+    }
+  }
+  unsigned seconds=bell103Session.state()==Bell103SessionState::Idle?6:
+                   bell103Session.connected()?(bell103SessionRole==Bell103Role::Originate?8:9):9;
+  if(!bell103ReceiveBurst(bell103SessionRole,burst,sizeof(burst),length,seconds,false))return;
+  if(Bell103Session::decode(burst,length,control)){
+    bool wasConnected=bell103Session.connected();
+    bell103Session.received(control,millis());
+    if(!wasConnected&&bell103Session.connected())bell103Data.begin(bell103Session.session());
+    Serial.printf("BELL103 AUTO RX CONTROL type=%u state=%s\n",(unsigned)control.message,
+                  bell103SessionStateName(bell103Session.state()));
+    screenStatus(bell103Session.connected()?"B103 CONNECTED":"B103 HANDSHAKE");
+    return;
+  }
+  if(!bell103Session.connected())return;
+  uint8_t text[71];size_t textLength=0;bool awaiting=bell103Data.awaitingAck();
+  bool delivered=bell103Data.received(burst,length,text,sizeof(text)-1,textLength);
+  if(delivered){
+    Serial.printf("BELL103 AUTO RX TEXT len=%u: ",(unsigned)textLength);
+    Serial.write(text,textLength);Serial.println();
+    screenStatus("B103 DATA RX");screenText(text,textLength);
+  }else if(awaiting&&!bell103Data.awaitingAck())Serial.println("BELL103 AUTO ACK OK");
+  else Serial.println("BELL103 AUTO RX DUPLICATE OR IGNORED");
 }
 
 bool sendPayload(uint8_t pid,const uint8_t* payload,size_t length) {
@@ -865,7 +945,7 @@ void loop() {
     while(Serial.available())slipTransport.acceptByte((uint8_t)Serial.read());
     serviceLiveReceiver();reliableLink.service();return;
   }
-  if (!Serial.available()) { if(acousticMode==AcousticMode::Bell103)return; serviceLiveReceiver(); if(!monitorMode){reliableLink.service();if(!reliableLink.busy())groupRuntime.service(millis());} return; }
+  if (!Serial.available()) { if(acousticMode==AcousticMode::Bell103){serviceBell103Auto();return;} serviceLiveReceiver(); if(!monitorMode){reliableLink.service();if(!reliableLink.busy())groupRuntime.service(millis());} return; }
   char c=Serial.read();
   if (acousticMode==AcousticMode::Ax25 && !commandLength && (c=='q'||c=='Q')) { stopLiveReceiver(); return; }
   if (acousticMode==AcousticMode::Ax25 && !commandLength && (c=='l'||c=='L')) { startLiveReceiver(); return; }
@@ -881,7 +961,10 @@ void loop() {
   if (c=='\r') return;
   if (c=='\n') {
     commandLine[commandLength]=0;
-    if(!strcmp(commandLine,"bell103 data selftest")){
+    if(!strncmp(commandLine,"bell103 auto ",13)){
+      bell103AutoCommand(commandLine);
+    }
+    else if(!strcmp(commandLine,"bell103 data selftest")){
       bell103DataSelfTest();
     }
     else if(!strncmp(commandLine,"bell103 session ",16)){

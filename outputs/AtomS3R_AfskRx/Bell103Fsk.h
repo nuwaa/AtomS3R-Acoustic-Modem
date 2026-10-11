@@ -36,7 +36,7 @@ class Bell103FskRx {
   bool decode(const int16_t* pcm,size_t samples,Bell103Role localRole,
               uint8_t* payload,size_t capacity,size_t& length);
  private:
-  static constexpr size_t MAX_SYMBOLS=1800;
+  static constexpr size_t MAX_SYMBOLS=2700; // up to 9 seconds at 300 baud
   uint8_t bits_[MAX_SYMBOLS];
   uint8_t bytes_[MAX_SYMBOLS/10+1];
   float markCos_[40],markSin_[40],spaceCos_[40],spaceSin_[40];

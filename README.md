@@ -57,6 +57,8 @@ Phase 4の実機診断用に `bell103 session caller|answerer|tx|rx|show|stop` �
 
 接続制御の4往復はCOM5・COM6間の空中試験で通過しました。続いて実験用の `bell103 data send <UTF-8>|tx|rx|show` と `Bell103DataLink` を追加しました。接続後の本文は最大70 UTF-8バイトで、停止待ち方式のACK、8秒後の再送判定、重複DATAの一回だけの表示を実装しています。`bell103 data selftest` はCOM6で、`TEST_BELL103_DATA_AIR.cmd` はCOM5・COM6間で両方向の本文とACKを確認済みです。`TEST_BELL103_RETRY_AIR.cmd` ではACKを1回失わせ、同じDATAの再送を受けても本文を重複表示せず、ACKを再送して復旧しました。**自動常時受信、Android/PCのBell 103画面統合は未実装です。送受の順序はPC側の試験スクリプトが指示します。**
 
+次の段階として `bell103 auto caller|answerer|show|stop` を追加しました。この試験版はATOM自身が録音窓を繰り返し、接続制御・DATA・ACKの送受と再送判定を進めます。`TEST_BELL103_AUTO_CONNECT.cmd` は2台に開始指示を1回ずつ送り、以後PCからTX/RXステップ指示を出さずに接続を確認します。`TEST_BELL103_AUTO_DATA.cmd` では2台間の接続に続き、短文AUTO01/AUTO02とACKが双方向に届くことを確認しました。**録音窓の境界でフレームを取りこぼす可能性があり、Android/PCのBell 103画面統合は未実装です。**
+
 ## ライセンス
 
 このリポジトリで作成したソースは [MIT License](LICENSE) です。第三者の依存物は各配布元のライセンスに従います。
