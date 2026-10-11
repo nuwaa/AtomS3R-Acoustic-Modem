@@ -55,7 +55,7 @@ Phase 3の空中試験では、COM5とCOM6の2台で両バンド・両方向の�
 
 Phase 4の実機診断用に `bell103 session caller|answerer|tx|rx|show|stop` を追加しました。`caller`/`answerer` でAX.25のライブ受信を止めてBell 103側に切り替え、`tx`/`rx` を交互に実行して4通の制御メッセージを空中で往復させます。`stop` でAX.25へ戻します。2台のPC接続ATOMでの試験は `TEST_BELL103_SESSION_AIR.cmd` を使用します。この4往復は実機で通過しましたが、手動ステップ式の診断です。
 
-接続制御の4往復はCOM5・COM6間の空中試験で通過しました。続いて実験用の `bell103 data send <UTF-8>|tx|rx|show` と `Bell103DataLink` を追加しました。接続後の本文は最大70 UTF-8バイトで、停止待ち方式のACK、8秒後の再送判定、重複DATAの一回だけの表示を実装しています。`bell103 data selftest` はCOM6で、`TEST_BELL103_DATA_AIR.cmd` はCOM5・COM6間で両方向の本文とACKを確認済みです。**ACK欠落時の空中再送、自動常時受信、Android/PCのBell 103画面統合は未検証または未実装です。送受の順序はPC側の試験スクリプトが指示します。**
+接続制御の4往復はCOM5・COM6間の空中試験で通過しました。続いて実験用の `bell103 data send <UTF-8>|tx|rx|show` と `Bell103DataLink` を追加しました。接続後の本文は最大70 UTF-8バイトで、停止待ち方式のACK、8秒後の再送判定、重複DATAの一回だけの表示を実装しています。`bell103 data selftest` はCOM6で、`TEST_BELL103_DATA_AIR.cmd` はCOM5・COM6間で両方向の本文とACKを確認済みです。`TEST_BELL103_RETRY_AIR.cmd` ではACKを1回失わせ、同じDATAの再送を受けても本文を重複表示せず、ACKを再送して復旧しました。**自動常時受信、Android/PCのBell 103画面統合は未実装です。送受の順序はPC側の試験スクリプトが指示します。**
 
 ## ライセンス
 
