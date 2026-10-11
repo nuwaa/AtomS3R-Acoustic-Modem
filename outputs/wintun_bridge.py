@@ -166,7 +166,8 @@ def start_native_chat(chat,stop):
 
 def run(args):
     if not elevated():raise PermissionError("Run this bridge as Administrator so Wintun can create/configure the adapter")
-    dll=ROOT/"wintun"/"amd64"/"wintun.dll"
+    custom_dll=getattr(args,"wintun_dll","")
+    dll=Path(custom_dll) if custom_dll else ROOT/"wintun"/"amd64"/"wintun.dll"
     tun=Wintun(dll,args.adapter);port=serial.Serial(args.port,115200,timeout=.02);port.reset_input_buffer();time.sleep(.4)
     configure(tun.index,args.local_ip,args.remote_ip)
     print(f"READY adapter={args.adapter} ifIndex={tun.index} {args.local_ip}/32 route={args.remote_ip}/32 port={args.port}",flush=True)
@@ -182,6 +183,8 @@ def run(args):
         def add(self,who,text):
             with self.lock:
                 self.events.append({"id":self.next_id,"who":who,"text":text});self.next_id+=1;self.events=self.events[-200:]
+            if who in ("自分", "送達", "送信失敗・後続は未送信", "未送信"):
+                print(f"CHAT EVENT at={event_time()} {who}: {text}",flush=True)
         def send(self,text):
             if not connected.is_set():raise RuntimeError("ATOM USB再接続中です。復帰後に再送してください")
             diagnostic=text.strip()
@@ -300,9 +303,12 @@ def run(args):
             chat.add(f"{group.group(1).decode('ascii')}>CHAT（グループ）",text)
             print(f"RX GROUP CHAT {len(text.encode('utf-8'))} bytes",flush=True)
         elif line.startswith(b"RELIABLE RETRY"):count("retries")
-        elif line.startswith(b"RELIABLE SENT"):count("tx_sent");tx_result["state"]="sent";tx_complete.set()
-        elif line.startswith(b"RELIABLE FAILED"):count("tx_failed");tx_result["state"]="failed";tx_complete.set()
-        elif line.startswith(b"RELIABLE BUSY"):count("tx_busy");tx_result["state"]="busy";tx_complete.set()
+        elif line.startswith(b"RELIABLE SENT"):
+            count("tx_sent");tx_result["state"]="sent";tx_complete.set();print(f"SERIAL STATUS at={event_time()} {line.decode('ascii',errors='replace')}",flush=True)
+        elif line.startswith(b"RELIABLE FAILED"):
+            count("tx_failed");tx_result["state"]="failed";tx_complete.set();print(f"SERIAL STATUS at={event_time()} {line.decode('ascii',errors='replace')}",flush=True)
+        elif line.startswith(b"RELIABLE BUSY"):
+            count("tx_busy");tx_result["state"]="busy";tx_complete.set();print(f"SERIAL STATUS at={event_time()} {line.decode('ascii',errors='replace')}",flush=True)
         elif line.startswith(b"GROUP TX OK"):
             count("tx_sent");tx_result["state"]="sent";tx_complete.set();print("GROUP TX OK",flush=True)
         elif line.startswith(b"GROUP TX FAILED"):
@@ -414,6 +420,7 @@ def main():
     parser.add_argument("--chat-listen",default="127.0.0.1",help="browser chat bind address")
     parser.add_argument("--chat-http-port",type=int,default=0,help="enable browser chat on this HTTP port; 0 disables")
     parser.add_argument("--chat-native",action="store_true",help="open a native peer-to-peer chat window")
+    parser.add_argument("--wintun-dll",default="",help="path to the separately installed Wintun DLL")
     args=parser.parse_args();run(args)
 
 

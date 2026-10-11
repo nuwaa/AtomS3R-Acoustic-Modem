@@ -608,6 +608,10 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         if (text.equals("USB切断")) monitorConfirmed = false;
         status.setText(shown);
         if (!text.startsWith("STATE RX LISTEN")) append(text);
+        if (text.startsWith("USB-C接続済み")) {
+            try { startForegroundService(new Intent(this, UsbConnectionService.class)); }
+            catch (RuntimeException error) { append("USB背景受信の開始失敗: " + error.getMessage()); }
+        } else if (text.equals("USB切断")) stopService(new Intent(this, UsbConnectionService.class));
         if(text.startsWith("USB-C接続済み"))status.postDelayed(() -> {
             try {
                 if (monitorMode) {usb.setGroupMode(false);usb.setMonitorMode(true);}
@@ -659,5 +663,5 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         }
         AtomVpnService.receiveFromUsb(packet);
     }
-    @Override protected void onDestroy() { reconnectHandler.removeCallbacks(reconnectPoll); commandExecutor.shutdownNow(); unregisterReceiver(receiver); usb.close(); super.onDestroy(); }
+    @Override protected void onDestroy() { reconnectHandler.removeCallbacks(reconnectPoll); commandExecutor.shutdownNow(); unregisterReceiver(receiver); usb.close(); stopService(new Intent(this, UsbConnectionService.class)); super.onDestroy(); }
 }

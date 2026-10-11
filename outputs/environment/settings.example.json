@@ -1,4 +1,6 @@
 {
   "port": "COM5",
-  "python_libraries": ""
+  "python_libraries": "",
+  "python": "C:/path/to/python.exe",
+  "wintun_dll": "C:/path/to/wintun.dll"
 }
