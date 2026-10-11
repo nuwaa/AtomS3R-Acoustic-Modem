@@ -51,6 +51,12 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
     private Button monitorButton;
     private Button sendButton;
     private Button vpnButton;
+    private Button bellCallerButton;
+    private Button bellAnswerButton;
+    private Button bellStopButton;
+    private boolean bellActive = false;
+    private boolean bellConnected = false;
+    private boolean bellPending = false;
     private boolean groupMode = false;
     private boolean monitorMode = false;
     private boolean monitorConfirmed = false;
@@ -181,6 +187,18 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
             } catch (Exception error) { onStatus(error.getMessage()); }
         });
         details.addView(modeButton);
+        LinearLayout bellActions = new LinearLayout(this);
+        bellActions.setGravity(Gravity.CENTER_VERTICAL);
+        bellCallerButton = smallButton("Bell 103 発呼");
+        bellAnswerButton = smallButton("応答");
+        bellStopButton = smallButton("切断");
+        bellCallerButton.setOnClickListener(v -> startBell103(true));
+        bellAnswerButton.setOnClickListener(v -> startBell103(false));
+        bellStopButton.setOnClickListener(v -> stopBell103());
+        bellActions.addView(bellCallerButton, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        bellActions.addView(bellAnswerButton, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        bellActions.addView(bellStopButton, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        details.addView(bellActions);
         monitorButton = smallButton(monitorMode ? "モニターを終了" : "受信専用モニター開始");
         monitorButton.setOnClickListener(v -> setMonitorMode(!monitorMode));
         details.addView(monitorButton);
@@ -328,6 +346,15 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         String text = message.getText().toString();
         if (text.isEmpty()) return;
         try {
+            if (bellActive) {
+                if (!bellConnected) { onStatus("Bell 103接続待ちです"); return; }
+                if (bellPending) { onStatus("前のBell 103本文のACK待ちです"); return; }
+                usb.sendBell103(text);
+                bellPending = true;
+                addBubble("自分 (Bell 103)", text, true);
+                message.setText("");
+                return;
+            }
             if (text.equals("/rx-off") || text.equals("/rx-on")) {
                 boolean enabled = text.equals("/rx-on");
                 usb.setAcousticReceiverEnabled(enabled);
@@ -344,6 +371,35 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         }
     }
 
+    private void startBell103(boolean caller) {
+        if (monitorMode) { onStatus("モニターを終了してからBell 103を開始してください"); return; }
+        try {
+            vpnRequested = false;
+            AtomVpnService.attachUsb(null);
+            stopService(new Intent(this, AtomVpnService.class));
+            usb.startBell103(caller);
+            bellActive = true;
+            bellConnected = false;
+            bellPending = false;
+            groupMode = false;
+            getPreferences(MODE_PRIVATE).edit().putBoolean("groupMode", false).apply();
+            modeButton.setText("通信: 直接");
+            refreshMonitorUi();
+            addNotice("Bell 103 " + (caller ? "発呼中" : "応答待ち") + "。双方が接続済みになるまで送信できません");
+        } catch (Exception error) { onStatus(error.getMessage()); }
+    }
+
+    private void stopBell103() {
+        try {
+            usb.stopBell103();
+            bellActive = false;
+            bellConnected = false;
+            bellPending = false;
+            refreshMonitorUi();
+            addNotice("Bell 103切断。AX.25に戻りました");
+        } catch (Exception error) { onStatus(error.getMessage()); }
+    }
+
     private void connectUsb() {
         UsbDevice device = usb.find();
         if (device == null) { onStatus(usb.describeDevices()); return; }
@@ -353,6 +409,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
     }
 
     private void startVpn() {
+        if (bellActive) { onStatus("Bell 103を切断してからIPトンネルを開始してください"); return; }
         if (monitorMode) { onStatus("モニター中はIPトンネルを開始できません"); return; }
         Intent permission = android.net.VpnService.prepare(this);
         if (permission != null) startActivityForResult(permission, VPN_REQUEST);
@@ -495,6 +552,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         diagnosticLog.setText(next);
     }); }
     private void setMonitorMode(boolean enabled) {
+        if (bellActive) { onStatus("Bell 103を切断してからモニターに切り替えてください"); return; }
         try {
             if (enabled) {
                 vpnRequested = false;
@@ -511,23 +569,31 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         } catch (Exception error) { onStatus(error.getMessage()); }
     }
     private void refreshMonitorUi() {
-        modeLabel.setText(monitorMode ? (monitorConfirmed ? "受信専用モニター · " + monitorPacketCount + " packets" : "モニター確認待ち") :
+        modeLabel.setText(bellActive ? (bellConnected ? "Bell 103 · 接続済み" : "Bell 103 · 接続中") : monitorMode ? (monitorConfirmed ? "受信専用モニター · " + monitorPacketCount + " packets" : "モニター確認待ち") :
                 groupMode ? "グループ CHAT" : "直接チャット");
-        modeButton.setEnabled(!monitorMode);
-        vpnButton.setEnabled(!monitorMode);
+        modeButton.setEnabled(!monitorMode && !bellActive);
+        vpnButton.setEnabled(!monitorMode && !bellActive);
         message.setEnabled(!monitorMode);
-        sendButton.setEnabled(!monitorMode);
-        command.setEnabled(!monitorMode);
+        sendButton.setEnabled(!monitorMode && (!bellActive || bellConnected));
+        command.setEnabled(!monitorMode && !bellActive);
+        bellCallerButton.setEnabled(!monitorMode && !bellActive);
+        bellAnswerButton.setEnabled(!monitorMode && !bellActive);
+        bellStopButton.setEnabled(bellActive);
+        monitorButton.setEnabled(!bellActive);
         monitorButton.setText(monitorMode ? "モニターを終了" : "受信専用モニター開始");
         conversationScroll.removeAllViews();
         conversationScroll.addView(monitorMode ? monitorLog : conversation);
     }
     @Override public void onStatus(String text) { runOnUiThread(() -> {
         String shown = text;
-        if (text.startsWith("USB-C接続済み")) {monitorConfirmed = false;shown = "ATOM接続済み";}
+        if (text.startsWith("USB-C接続済み")) {monitorConfirmed = false;bellActive = false;bellConnected = false;bellPending = false;refreshMonitorUi();shown = "ATOM接続済み";}
+        else if (text.startsWith("BELL103 AUTO RX CONTROL") && text.contains("state=connected")) {bellConnected = true;refreshMonitorUi();shown = "Bell 103接続済み";}
+        else if (text.startsWith("BELL103 SESSION STOP") || text.startsWith("BELL103 AUTO CONNECT TIMEOUT")) {bellActive = false;bellConnected = false;bellPending = false;refreshMonitorUi();shown = "Bell 103切断";}
+        else if (text.startsWith("BELL103 AUTO ACK OK")) {bellPending = false;shown = "Bell 103送達確認";}
+        else if (text.startsWith("BELL103 AUTO DATA RETRIES EXHAUSTED") || text.startsWith("BELL103 DATA QUEUE FAILED") || text.startsWith("ERROR: Bell 103")) bellPending = false;
         else if (text.startsWith("STATE RX LISTEN")) shown = "ATOM接続済み・受信中";
         else if (text.startsWith("LIVE RX stopped")) shown = "受信停止中";
-        else if (text.equals("USB切断")) shown = "ATOM未接続";
+        else if (text.equals("USB切断")) {bellActive = false;bellConnected = false;bellPending = false;refreshMonitorUi();shown = "ATOM未接続";}
         else if (text.startsWith("MONITOR MODE=on")) {
             monitorConfirmed = true;
             shown = "ATOM接続済み・受信専用";
@@ -550,6 +616,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
     }); }
     @Override public void onMessage(String source, String destination, String text) { addBubble(source, text, false); }
     @Override public void onGroupMessage(String source, String text) { addBubble(source, text, false); }
+    @Override public void onBell103Message(String text) { addBubble("Bell 103", text, false); }
     @Override public void onMonitorPacket(String source,String destination,int control,int pid,byte[] payload) {
         if (!monitorMode || !monitorConfirmed) return;
         runOnUiThread(() -> {

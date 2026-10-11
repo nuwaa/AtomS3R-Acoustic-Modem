@@ -49,15 +49,17 @@ PC 側は ATOM の USB CDC シリアルポートを使用します。まずシ�
 
 `feature/bell103` ブランチでBell 103方式の300 bps音響モデムを段階的に開発中です。`AcousticMode` の区別とSerialの `acoustic show|ax25|bell103` を追加しました。`bell103 tone` はダイヤルアップ風の接続音を再生する診断コマンドです。この音は参考実装の段階構成をもとにしたもので、V.34の完全なネゴシエーションではありません。
 
-Phase 3では、独立したBell 103 FSK診断経路を追加しました。`bell103 selftest` は送受両バンドの合成PCMをCRCまで自己検査し、`bell103 rx answer` と `bell103 tx originate <UTF-8>`、または逆の役割の組み合わせで6秒録音後に短文を復号できます。送信最大80 UTF-8バイト、300 bps、8N1、役割別の2バンド、独自のB103同期とCRC-16を使用します。**この診断経路は未接続の一方向送信で、受信準備の確認・ACK・再送はまだありません**。`acoustic bell103` は接続手順の実装まで拒否され、現行AX.25経路が引き続き動作します。PC/AndroidのBell 103操作画面も未実装です。
+Phase 3では、独立したBell 103 FSK診断経路を追加しました。`bell103 selftest` は送受両バンドの合成PCMをCRCまで自己検査し、`bell103 rx answer` と `bell103 tx originate <UTF-8>`、または逆の役割の組み合わせで6秒録音後に短文を復号できます。送信最大80 UTF-8バイト、300 bps、8N1、役割別の2バンド、独自のB103同期とCRC-16を使用します。この診断経路は接続手順と別の一方向試験です。
 
 Phase 3の空中試験では、COM5とCOM6の2台で両バンド・両方向の短文をCRC正常で受信しました。再現には `TEST_BELL103_AIR.cmd` を使用します。Phase 4では独立した `Bell103Session` に、HELLO→READY→CONFIRM→ESTABLISHEDの接続制御、セッションIDの照合、重複制御メッセージへの応答、タイムアウトを追加し始めました。`bell103 session selftest` はこの状態遷移の内部試験で、COM6の実機で通過しました。
 
 Phase 4の実機診断用に `bell103 session caller|answerer|tx|rx|show|stop` を追加しました。`caller`/`answerer` でAX.25のライブ受信を止めてBell 103側に切り替え、`tx`/`rx` を交互に実行して4通の制御メッセージを空中で往復させます。`stop` でAX.25へ戻します。2台のPC接続ATOMでの試験は `TEST_BELL103_SESSION_AIR.cmd` を使用します。この4往復は実機で通過しましたが、手動ステップ式の診断です。
 
-接続制御の4往復はCOM5・COM6間の空中試験で通過しました。続いて実験用の `bell103 data send <UTF-8>|tx|rx|show` と `Bell103DataLink` を追加しました。接続後の本文は最大70 UTF-8バイトで、停止待ち方式のACK、8秒後の再送判定、重複DATAの一回だけの表示を実装しています。`bell103 data selftest` はCOM6で、`TEST_BELL103_DATA_AIR.cmd` はCOM5・COM6間で両方向の本文とACKを確認済みです。`TEST_BELL103_RETRY_AIR.cmd` ではACKを1回失わせ、同じDATAの再送を受けても本文を重複表示せず、ACKを再送して復旧しました。**自動常時受信、Android/PCのBell 103画面統合は未実装です。送受の順序はPC側の試験スクリプトが指示します。**
+接続制御の4往復はCOM5・COM6間の空中試験で通過しました。続いて実験用の `bell103 data send <UTF-8>|tx|rx|show` と `Bell103DataLink` を追加しました。接続後の本文は最大70 UTF-8バイトで、停止待ち方式のACK、8秒後の再送判定、重複DATAの一回だけの表示を実装しています。`bell103 data selftest` はCOM6で、`TEST_BELL103_DATA_AIR.cmd` はCOM5・COM6間で両方向の本文とACKを確認済みです。`TEST_BELL103_RETRY_AIR.cmd` ではACKを1回失わせ、同じDATAの再送を受けても本文を重複表示せず、ACKを再送して復旧しました。
 
-次の段階として `bell103 auto caller|answerer|show|stop` を追加しました。この試験版はATOM自身が録音窓を繰り返し、接続制御・DATA・ACKの送受と再送判定を進めます。`TEST_BELL103_AUTO_CONNECT.cmd` は2台に開始指示を1回ずつ送り、以後PCからTX/RXステップ指示を出さずに接続を確認します。`TEST_BELL103_AUTO_DATA.cmd` では2台間の接続に続き、短文AUTO01/AUTO02とACKが双方向に届くことを確認しました。**録音窓の境界でフレームを取りこぼす可能性があり、Android/PCのBell 103画面統合は未実装です。**
+次の段階として `bell103 auto caller|answerer|show|stop` を追加しました。この試験版はATOM自身が録音窓を繰り返し、接続制御・DATA・ACKの送受と再送判定を進めます。`TEST_BELL103_AUTO_CONNECT.cmd` は2台に開始指示を1回ずつ送り、以後PCからTX/RXステップ指示を出さずに接続を確認します。`TEST_BELL103_AUTO_DATA.cmd` では2台間の接続に続き、短文AUTO01/AUTO02とACKが双方向に届くことを確認しました。続けて `TEST_AX25_DIRECT_REGRESSION.cmd` でAX.25直接チャットの双方向が通過しました。録音窓の境界でフレームを取りこぼす可能性があり、長時間の連続通信は未検証です。
+
+Phase 5のPCブラウザ画面とAndroidアプリには、Bell 103の発呼・応答・切断、接続表示、UTF-8短文の送受信を追加しました。PC画面は [START_BELL103_PC_CHAT.cmd](START_BELL103_PC_CHAT.cmd) または `python outputs/usb_chat_web.py --port COM6` で起動し、Android APKは [BUILD_BELL103_ANDROID.cmd](BUILD_BELL103_ANDROID.cmd) で作れます。Android 2台へワイヤレスADBで入れる場合は、各端末でVPNを一時切断してから [INSTALL_BELL103_ANDROID_WIRELESS.cmd](INSTALL_BELL103_ANDROID_WIRELESS.cmd) を1回ずつ実行します。Bell 103の送信はACKを待って次の本文を受け付けます。Bell 103中はAX.25の直接・グループ選択およびAndroidのIPトンネル操作を無効にし、切断後はAX.25に戻します。Android APKのビルド、Android 2台およびPC↔AndroidでのBell 103双方向本文・ACK、切断後のAX.25双方向チャットは実機で通過しました。接続音の自動再生と接続手順との境界同期はまだ別々の診断経路であり、統合試験は未実施です。
 
 ## ライセンス
 

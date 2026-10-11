@@ -25,6 +25,8 @@ class UsbChatGroupTest(unittest.TestCase):
         bridge.write_lock = threading.Lock()
         bridge.port = FakePort()
         bridge.mode = "direct"
+        bridge.bell = "off"
+        bridge.bell_pending = False
         bridge.status = "COM6 接続済み"
         bridge.events = []
         bridge.recent_lines = deque(maxlen=100)
@@ -60,6 +62,29 @@ class UsbChatGroupTest(unittest.TestCase):
         bridge.handle_line("LIVE RX stopped: 0 valid frame(s).")
         bridge.handle_line("STATE RX LISTEN (q=stop, t <text>=TX).")
         self.assertEqual([item["who"] for item in bridge.events], ["診断", "診断", "ATOM", "ATOM"])
+
+    def test_bell103_controls_utf8_data_and_returns_to_ax25(self):
+        bridge = self.bridge()
+        bridge.set_mode("group")
+        bridge.bell_action("caller")
+        self.assertIn(b"group off\nbell103 auto caller\n", bridge.port.writes)
+        with self.assertRaises(ValueError):
+            bridge.send("早すぎる")
+        with self.assertRaises(ValueError):
+            bridge.set_mode("group")
+        bridge.handle_line("BELL103 AUTO RX CONTROL type=4 state=connected")
+        self.assertEqual(bridge.bell, "接続済み")
+        bridge.send("横浜市")
+        self.assertTrue(bridge.port.writes.endswith(b"bell103 data send " + "横浜市".encode() + b"\n"))
+        with self.assertRaises(ValueError):
+            bridge.send("漢" * 24)
+        bridge.handle_line("BELL103 AUTO ACK OK")
+        self.assertFalse(bridge.bell_pending)
+        bridge.handle_line("BELL103 AUTO RX TEXT len=9: 繁體中文")
+        self.assertEqual(bridge.events[-1]["text"], "繁體中文")
+        bridge.bell_action("stop")
+        bridge.send("直接")
+        self.assertTrue(bridge.port.writes.endswith(b"bell103 auto stop\nz " + "直接".encode().hex().encode() + b"\n"))
 
 
 if __name__ == "__main__":
