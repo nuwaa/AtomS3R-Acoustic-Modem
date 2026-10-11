@@ -55,6 +55,8 @@ AcousticMode acousticMode=AcousticMode::Ax25;
 Bell103Overture bell103Overture;
 Bell103FskTx bell103Tx;
 Bell103FskRx bell103Rx;
+Bell103Session bell103Session;
+Bell103Role bell103SessionRole=Bell103Role::Originate;
 uint32_t liveMaxProcessUs=0;
 size_t liveBlocks=0;
 int32_t liveBlock[256*2];
@@ -82,6 +84,9 @@ bool bell103SendDiagnostic(const uint8_t* text,size_t length,Bell103Role role);
 bool bell103ReceiveDiagnostic(Bell103Role role);
 bool bell103SelfTest();
 bool bell103SessionSelfTest();
+bool bell103SendBurst(const uint8_t* payload,size_t length,Bell103Role role);
+bool bell103ReceiveBurst(Bell103Role role,uint8_t* payload,size_t capacity,size_t& length);
+void bell103SessionCommand(const char* command);
 
 bool writeRegister(uint8_t address,uint8_t reg,uint8_t value) {
   Wire.beginTransmission(address);
@@ -475,10 +480,7 @@ bool playBell103Overture() {
   return ok;
 }
 
-bool bell103SendDiagnostic(const uint8_t* text,size_t length,Bell103Role role) {
-  if(binaryHostMode()||monitorMode||reliableLink.busy()||groupRuntime.enabled()) {
-    Serial.println("ERROR: Bell 103 diagnostic requires normal, direct, idle mode.");return false;
-  }
+bool bell103SendBurst(const uint8_t* text,size_t length,Bell103Role role) {
   if(!bell103Tx.begin(text,length,role)) {
     Serial.println("ERROR: Bell 103 text must be 1..80 UTF-8 bytes.");return false;
   }
@@ -499,10 +501,16 @@ bool bell103SendDiagnostic(const uint8_t* text,size_t length,Bell103Role role) {
   return ok;
 }
 
-bool bell103ReceiveDiagnostic(Bell103Role role) {
+bool bell103SendDiagnostic(const uint8_t* text,size_t length,Bell103Role role) {
   if(binaryHostMode()||monitorMode||reliableLink.busy()||groupRuntime.enabled()) {
     Serial.println("ERROR: Bell 103 diagnostic requires normal, direct, idle mode.");return false;
   }
+  return bell103SendBurst(text,length,role);
+}
+
+bool bell103ReceiveBurst(Bell103Role role,uint8_t* text,size_t capacity,size_t& length) {
+  length=0;
+  if(!text||!capacity)return false;
   constexpr size_t MAX_SAMPLES=6*SAMPLE_RATE;
   int16_t* samples=(int16_t*)heap_caps_malloc(MAX_SAMPLES*sizeof(int16_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
   if(!samples){Serial.println("ERROR: Bell 103 capture allocation failed.");return false;}
@@ -519,8 +527,18 @@ bool bell103ReceiveDiagnostic(Bell103Role role) {
     for(size_t i=0;i<count;++i)samples[pos+i]=(int16_t)(block[2*i]>>16);
     pos+=count;
   }
+  if(ok)ok=bell103Rx.decode(samples,MAX_SAMPLES,role,text,capacity,length);
+  heap_caps_free(samples);
+  if(resume)startLiveReceiver();
+  return ok;
+}
+
+bool bell103ReceiveDiagnostic(Bell103Role role) {
+  if(binaryHostMode()||monitorMode||reliableLink.busy()||groupRuntime.enabled()) {
+    Serial.println("ERROR: Bell 103 diagnostic requires normal, direct, idle mode.");return false;
+  }
   uint8_t text[81];size_t length=0;
-  if(ok)ok=bell103Rx.decode(samples,MAX_SAMPLES,role,text,sizeof(text)-1,length);
+  bool ok=bell103ReceiveBurst(role,text,sizeof(text)-1,length);
   if(ok){
     text[length]=0;
     Serial.printf("BELL103 RX CRC OK LEN=%u HEX=",(unsigned)length);
@@ -528,8 +546,6 @@ bool bell103ReceiveDiagnostic(Bell103Role role) {
     Serial.println();Serial.print("BELL103 TEXT: ");Serial.write(text,length);Serial.println();
     screenStatus("B103 RX CRC OK");screenText(text,length);
   }else Serial.println("BELL103 RX NO VALID FRAME");
-  heap_caps_free(samples);
-  if(resume)startLiveReceiver();
   return ok;
 }
 
@@ -583,6 +599,78 @@ bool bell103SessionSelfTest() {
   caller.received({Bell103Message::Bye,ID},6000);ok=ok&&!caller.connected();
   Serial.println(ok?"BELL103 SESSION SELFTEST PASS":"BELL103 SESSION SELFTEST FAILED");
   return ok;
+}
+
+const char* bell103SessionStateName(Bell103SessionState state) {
+  switch(state){
+    case Bell103SessionState::Idle:return "idle";
+    case Bell103SessionState::WaitReady:return "wait-ready";
+    case Bell103SessionState::WaitConfirm:return "wait-confirm";
+    case Bell103SessionState::WaitEstablished:return "wait-established";
+    case Bell103SessionState::Connected:return "connected";
+  }
+  return "unknown";
+}
+
+void bell103SessionCommand(const char* command) {
+  if(!strcmp(command,"bell103 session caller")||!strcmp(command,"bell103 session answerer")){
+    if(acousticMode!=AcousticMode::Ax25||binaryHostMode()||monitorMode||
+       reliableLink.busy()||groupRuntime.enabled()){
+      Serial.println("ERROR: Bell 103 session requires AX.25 normal, direct, idle mode.");return;
+    }
+    stopLiveReceiver(false);
+    acousticTransport.resetReceiver();speakerEnable(false);
+    bool caller=!strcmp(command,"bell103 session caller");
+    bell103SessionRole=caller?Bell103Role::Originate:Bell103Role::Answer;
+    if(caller)bell103Session.startCaller(esp_random(),millis());
+    else bell103Session.startAnswerer();
+    acousticMode=AcousticMode::Bell103;
+    screenStatus(caller?"B103 CALLER":"B103 ANSWERER");
+    Serial.printf("BELL103 SESSION START role=%s id=%lu state=%s\n",
+                  caller?"caller":"answerer",(unsigned long)bell103Session.session(),
+                  bell103SessionStateName(bell103Session.state()));
+    return;
+  }
+  if(!strcmp(command,"bell103 session stop")){
+    bell103Session.reset();acousticMode=AcousticMode::Ax25;
+    speakerEnable(false);startLiveReceiver();
+    Serial.println("BELL103 SESSION STOP; ACOUSTIC MODE=ax25");return;
+  }
+  if(!strcmp(command,"bell103 session show")){
+    Serial.printf("BELL103 SESSION mode=%s state=%s id=%lu\n",acousticModeName(acousticMode),
+                  bell103SessionStateName(bell103Session.state()),
+                  (unsigned long)bell103Session.session());return;
+  }
+  if(acousticMode!=AcousticMode::Bell103){
+    Serial.println("ERROR: start bell103 session caller|answerer first.");return;
+  }
+  if(!strcmp(command,"bell103 session tx")){
+    Bell103Control outgoing{};uint8_t bytes[Bell103Session::CONTROL_BYTES];
+    if(!bell103Session.action(millis(),outgoing)){
+      Serial.println("BELL103 SESSION NO TX PENDING");return;
+    }
+    if(!Bell103Session::encode(outgoing,bytes,sizeof(bytes))||
+       !bell103SendBurst(bytes,sizeof(bytes),bell103SessionRole)){
+      Serial.println("BELL103 SESSION TX FAILED");return;
+    }
+    bell103Session.sent(millis());
+    Serial.printf("BELL103 SESSION TX type=%u id=%lu state=%s\n",
+                  (unsigned)outgoing.message,(unsigned long)outgoing.session,
+                  bell103SessionStateName(bell103Session.state()));return;
+  }
+  if(!strcmp(command,"bell103 session rx")){
+    uint8_t bytes[81];size_t length=0;Bell103Control incoming{};
+    if(!bell103ReceiveBurst(bell103SessionRole,bytes,sizeof(bytes),length)||
+       !Bell103Session::decode(bytes,length,incoming)){
+      Serial.println("BELL103 SESSION RX NO VALID CONTROL");return;
+    }
+    bell103Session.received(incoming,millis());
+    Serial.printf("BELL103 SESSION RX type=%u id=%lu state=%s\n",
+                  (unsigned)incoming.message,(unsigned long)incoming.session,
+                  bell103SessionStateName(bell103Session.state()));
+    screenStatus(bell103Session.connected()?"B103 CONNECTED":"B103 HANDSHAKE");return;
+  }
+  Serial.println("ERROR: bell103 session caller|answerer|tx|rx|show|stop.");
 }
 
 bool sendPayload(uint8_t pid,const uint8_t* payload,size_t length) {
@@ -653,7 +741,7 @@ void receiveThreeSeconds() {
 }
 
 void startLiveReceiver() {
-  if(liveRx)return;
+  if(liveRx||acousticMode!=AcousticMode::Ax25)return;
   frames=0; liveMaxProcessUs=0; liveBlocks=0;
   acousticTransport.resetReceiver(); prepareReceiver(); liveRx=true;
   screenStatus("RX LISTEN / LIVE");
@@ -669,7 +757,7 @@ void stopLiveReceiver(bool report) {
 }
 
 void serviceLiveReceiver() {
-  if(!liveRx)return;
+  if(!liveRx||acousticMode!=AcousticMode::Ax25)return;
   size_t received=0;
   esp_err_t err=i2s_channel_read(audio.rxChan(),liveBlock,sizeof(liveBlock),&received,20);
   if(err==ESP_ERR_TIMEOUT || received==0)return;
@@ -691,23 +779,30 @@ void loop() {
     while(Serial.available())slipTransport.acceptByte((uint8_t)Serial.read());
     serviceLiveReceiver();reliableLink.service();return;
   }
-  if (!Serial.available()) { serviceLiveReceiver(); if(!monitorMode){reliableLink.service();if(!reliableLink.busy())groupRuntime.service(millis());} return; }
+  if (!Serial.available()) { if(acousticMode==AcousticMode::Bell103)return; serviceLiveReceiver(); if(!monitorMode){reliableLink.service();if(!reliableLink.busy())groupRuntime.service(millis());} return; }
   char c=Serial.read();
-  if (!commandLength && (c=='q'||c=='Q')) { stopLiveReceiver(); return; }
-  if (!commandLength && (c=='l'||c=='L')) { startLiveReceiver(); return; }
-  if (!commandLength && (c=='r'||c=='R')) {
+  if (acousticMode==AcousticMode::Ax25 && !commandLength && (c=='q'||c=='Q')) { stopLiveReceiver(); return; }
+  if (acousticMode==AcousticMode::Ax25 && !commandLength && (c=='l'||c=='L')) { startLiveReceiver(); return; }
+  if (acousticMode==AcousticMode::Ax25 && !commandLength && (c=='r'||c=='R')) {
     stopLiveReceiver(false); receiveThreeSeconds(); startLiveReceiver(); return;
   }
-  if (!commandLength && (c=='p'||c=='P')) {
+  if (acousticMode==AcousticMode::Ax25 && !commandLength && (c=='p'||c=='P')) {
     bool resume=liveRx; stopLiveReceiver(false); dumpRecording(); if(resume)startLiveReceiver(); return;
   }
   if (!commandLength && c=='?') {
-    Serial.println("Commands: t <ASCII>; g <UTF-8>; k <UTF8-HEX>; group on|off|show; monitor on|off|show; acoustic show|ax25|bell103; bell103 tone|selftest|session selftest|rx originate|rx answer|tx originate <text>|tx answer <text>; z <HEX>; y <HEX>; mode ppp; slip on; boot show|normal|slip|ppp|reset; u <HEX>; x <PIDHEX> <HEX>; c <SRC> <DEST>; l=RX; q=stop; r=batch; p=PCM."); return;
+    Serial.println("Commands: t <ASCII>; g <UTF-8>; k <UTF8-HEX>; group on|off|show; monitor on|off|show; acoustic show|ax25|bell103; bell103 tone|selftest|session selftest|session caller|answerer|tx|rx|show|stop|rx originate|rx answer|tx originate <text>|tx answer <text>; z <HEX>; y <HEX>; mode ppp; slip on; boot show|normal|slip|ppp|reset; u <HEX>; x <PIDHEX> <HEX>; c <SRC> <DEST>; l=RX; q=stop; r=batch; p=PCM."); return;
   }
   if (c=='\r') return;
   if (c=='\n') {
     commandLine[commandLength]=0;
-    if (commandLength>=3 && (commandLine[0]=='t'||commandLine[0]=='T') && commandLine[1]==' ') {
+    if(!strncmp(commandLine,"bell103 session ",16)){
+      bell103SessionCommand(commandLine);
+    }
+    else if(acousticMode==AcousticMode::Bell103 && strcmp(commandLine,"acoustic show") &&
+            strcmp(commandLine,"acoustic ax25")){
+      Serial.println("ERROR: Bell 103 session active; use bell103 session stop first.");
+    }
+    else if (commandLength>=3 && (commandLine[0]=='t'||commandLine[0]=='T') && commandLine[1]==' ') {
       bool resume=liveRx; stopLiveReceiver(false); Serial.println("STATE RX -> TX");
       sendText(commandLine+2);
       if(resume) { Serial.println("STATE TX -> RX"); startLiveReceiver(); }
@@ -744,7 +839,8 @@ void loop() {
       Serial.printf("BOOT MODE=%s saved=%s\n",bootModeName(bootMode),preferences.isKey("boot")?"yes":"no");
     }
     else if(!strcmp(commandLine,"acoustic show")) {
-      Serial.printf("ACOUSTIC MODE=%s READY=ax25\n",acousticModeName(acousticMode));
+      if(acousticMode==AcousticMode::Ax25)Serial.println("ACOUSTIC MODE=ax25 READY=ax25");
+      else Serial.printf("ACOUSTIC MODE=bell103 state=%s\n",bell103SessionStateName(bell103Session.state()));
     }
     else if(!strcmp(commandLine,"bell103 tone")) {
       playBell103Overture();
@@ -771,6 +867,7 @@ void loop() {
       AcousticMode requested;
       if(!parseAcousticMode(commandLine+9,requested)) Serial.println("ERROR: use acoustic show|ax25|bell103.");
       else if(requested==AcousticMode::Bell103) Serial.println("ERROR: Bell 103 is not ready in this build; AX.25 remains active.");
+      else if(acousticMode==AcousticMode::Bell103)bell103SessionCommand("bell103 session stop");
       else Serial.println("ACOUSTIC MODE=ax25 (unchanged).");
     }
     else if(!strcmp(commandLine,"group show")) {
