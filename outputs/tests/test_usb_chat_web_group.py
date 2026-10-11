@@ -27,6 +27,8 @@ class UsbChatGroupTest(unittest.TestCase):
         bridge.mode = "direct"
         bridge.bell = "off"
         bridge.bell_pending = False
+        bridge.direct_queue = deque()
+        bridge.direct_active = None
         bridge.status = "COM6 接続済み"
         bridge.events = []
         bridge.recent_lines = deque(maxlen=100)
@@ -37,6 +39,7 @@ class UsbChatGroupTest(unittest.TestCase):
         bridge = self.bridge()
         bridge.send("直接")
         self.assertIn(b"z " + "直接".encode().hex().encode() + b"\n", bridge.port.writes)
+        bridge.handle_line("RELIABLE SENT ID=1 PART=1/1 PID=F0")
         bridge.set_mode("group")
         bridge.send("横浜市")
         self.assertTrue(bridge.port.writes.endswith(b"group on\nk " + "横浜市".encode().hex().encode() + b"\n"))

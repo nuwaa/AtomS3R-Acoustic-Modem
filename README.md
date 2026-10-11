@@ -61,7 +61,11 @@ Phase 4の実機診断用に `bell103 session caller|answerer|tx|rx|show|stop` �
 
 Phase 5のPCブラウザ画面とAndroidアプリには、Bell 103の発呼・応答・切断、接続表示、UTF-8短文の送受信を追加しました。PC画面は [START_BELL103_PC_CHAT.cmd](START_BELL103_PC_CHAT.cmd) または `python outputs/usb_chat_web.py --port COM6` で起動し、Android APKは [BUILD_BELL103_ANDROID.cmd](BUILD_BELL103_ANDROID.cmd) で作れます。Android 2台へワイヤレスADBで入れる場合は、各端末でVPNを一時切断してから [INSTALL_BELL103_ANDROID_WIRELESS.cmd](INSTALL_BELL103_ANDROID_WIRELESS.cmd) を1回ずつ実行します。Bell 103の送信はACKを待って次の本文を受け付けます。Bell 103中はAX.25の直接・グループ選択およびAndroidのIPトンネル操作を無効にし、切断後はAX.25に戻します。Android APKのビルド、Android 2台およびPC↔AndroidでのBell 103双方向本文・ACK、切断後のAX.25双方向チャットは実機で通過しました。
 
-発呼側の `bell103 auto caller` はダイヤルアップ風の接続音を再生し、約250msの無音区間を置いてHELLOを送ります。応答側の `bell103 auto answerer` は先に受信待ちに入ります。READY/CONFIRM/ESTABLISHEDの往復が完了するまで本文は送れません。2台の実機で接続音→HELLOの順序、自動接続、双方向本文・ACKを確認しました。PCブラウザから発呼してAndroidが応答する操作でも、接続音、双方向本文・ACK、切断後のAX.25直接・グループチャットが通過しました。接続音は再現音であり、V.34の実際のネゴシエーションではありません。録音窓の境界や騒音下を含む長時間試験は未実施です。
+発呼側の `bell103 auto caller` はダイヤルアップ風の接続音を再生し、約250msの無音区間を置いてHELLOを送ります。応答側の `bell103 auto answerer` は先に受信待ちに入ります。READY/CONFIRM/ESTABLISHEDの往復が完了するまで本文は送れません。2台の実機で接続音→HELLOの順序、自動接続、双方向本文・ACKを確認しました。PCブラウザから発呼してAndroidが応答する操作でも、接続音、双方向本文・ACK、切断後のAX.25直接・グループチャットが通過しました。接続音は再現音であり、V.34の実際のネゴシエーションではありません。
+
+受信窓の途中でもCRCが正常なBell 103フレームを復号できた時点で処理を進めるようにしました。COM5・COM6の短時間試験では、同じ2通・ACK 2件・再送0件の条件で、経過時間は以前の約155秒から約124秒でした。試験には2通目までの45秒待機が含まれるため、これは個々の本文の送達時間ではありません。雑音や配置が変わる場合の速度・成功率は別途確認が必要です。
+
+AX.25グループCHATは欠落した本文より新しい本文を一時保留し、SUMMARY/NACKで回復した場合に送信元ごとのID順で表示します。実機の意図的な欠落試験 `TEST_AX25_GROUP_ORDER.cmd` で、音響受信順が逆転しても画面表示順が正常になることを確認しました。直接チャットはPCブラウザとAndroidで送達確認まで後続を最大16件待機させ、送信失敗時は後続を未送信として止めます。Android 2台の実機では、長いE01と直後のE02が順番どおり各1回届き、両方の送達確認が出ました。受信停止中のE03失敗後、待機中のE04は送信されず、再開後のE05だけが届きました。PC側「ATOM Peer Chat」にも同じ失敗時停止を追加しましたが、この画面での連続送信実機試験は未実施です。
 
 回帰・繰り返し試験では、PC↔AndroidのIPトンネルで両方向のpingが応答しました。[TEST_BELL103_STRESS.cmd](TEST_BELL103_STRESS.cmd) は2台のPC接続ATOMで接続音付きBell 103接続後、短文6通を交互に送って本文・ACK・重複表示を確認し、実機でPASSしました。続けたAX.25直接チャット回帰も双方向PASSです。[TEST_BELL103_1MIN.cmd](TEST_BELL103_1MIN.cmd) と [TEST_BELL103_30MIN.cmd](TEST_BELL103_30MIN.cmd) は経過時間を測定し、交互の短文・ACK・一回だけの着信を検査し、終了時にAX.25へ戻します。COM5・COM6での30分試験は27通すべて着信・ACK、7回の再送でPASSしました。結果はローカルの `outputs/runs` に保存されます。この結果は今回の配置・音量での確認であり、騒音下や長時間連続運用の保証ではありません。
 

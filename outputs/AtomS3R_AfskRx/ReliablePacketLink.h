@@ -17,7 +17,7 @@ class ReliablePacketLink {
   static constexpr uint8_t MAX_FRAGMENTS=(MAX_MESSAGE+FRAGMENT_DATA-1)/FRAGMENT_DATA;
   using SendFunction=bool (*)(uint8_t,const uint8_t*,size_t,void*);
   using DeliveryHandler=void (*)(uint8_t,const uint8_t*,size_t,void*);
-  using StatusHandler=void (*)(const char*,uint16_t,uint8_t,uint8_t,void*);
+  using StatusHandler=void (*)(const char*,uint16_t,uint8_t,uint8_t,uint8_t,void*);
 
   void configure(SendFunction sender,DeliveryHandler delivery,StatusHandler status,void* context){
     sender_=sender;delivery_=delivery;status_=status;context_=context;
@@ -91,7 +91,7 @@ class ReliablePacketLink {
   uint16_t nextId_=0,txId_=0,rxId_=0,lastCompleteId_=0;uint32_t rxMask_=0,txCrc_=0,rxCrc_=0,lastCompleteCrc_=0;
   uint8_t txIndex_=0,txCount_=0,rxCount_=0,attempts_=0;bool active_=false,waiting_=false,retryPending_=false,rxActive_=false;uint32_t sentAt_=0,retryAt_=0;
   bool ackPending_=false;uint16_t ackId_=0,ackTotal_=0;uint8_t ackIndex_=0,ackCount_=0,ackPid_=0;uint32_t ackCrc_=0,ackQueuedAt_=0,contentionDelayMs_=0;
-  void report(const char* state,uint16_t id,uint8_t current,uint8_t total){if(status_)status_(state,id,current,total,context_);}
+  void report(const char* state,uint16_t id,uint8_t current,uint8_t total){if(status_)status_(state,id,current,total,txPid_,context_);}
   void queueAck(const Header& h){ackPending_=true;ackQueuedAt_=millis();ackId_=h.id;ackIndex_=h.index;ackCount_=h.count;ackTotal_=h.total;ackCrc_=h.crc;ackPid_=h.applicationPid;}
   static void encode(uint8_t* p,uint8_t type,uint16_t id,uint8_t index,uint8_t count,uint16_t total,uint32_t crc,uint8_t pid){
     p[0]='R';p[1]='L';p[2]=1;p[3]=type;p[4]=(uint8_t)id;p[5]=(uint8_t)(id>>8);p[6]=index;p[7]=count;

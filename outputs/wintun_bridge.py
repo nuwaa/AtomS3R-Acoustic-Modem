@@ -170,13 +170,14 @@ def run(args):
     tun=Wintun(dll,args.adapter);port=serial.Serial(args.port,115200,timeout=.02);port.reset_input_buffer();time.sleep(.4)
     configure(tun.index,args.local_ip,args.remote_ip)
     print(f"READY adapter={args.adapter} ifIndex={tun.index} {args.local_ip}/32 route={args.remote_ip}/32 port={args.port}",flush=True)
-    stop=threading.Event();buffer=bytearray();outbound=queue.Queue(maxsize=args.queue_size);tx_complete=threading.Event();rx_ipv4=threading.Event()
+    stop=threading.Event();buffer=bytearray();outbound=queue.Queue(maxsize=args.queue_size);tx_complete=threading.Event();rx_ipv4=threading.Event();tx_result={"state":None}
     port_lock=threading.Lock();port_state={"port":port};connected=threading.Event();connected.set()
     def current_port():
         with port_lock:return port_state["port"]
     class Chat:
         def __init__(self):
             self.lock=threading.Lock();self.events=[];self.next_id=1;self.mode="direct";self.link_status="接続済み"
+            self.chat_generation=0
             self.status=f"{args.port} / {self.link_status} / 直接"
         def add(self,who,text):
             with self.lock:
@@ -195,7 +196,7 @@ def run(args):
                 mode=self.mode
                 limit=198 if mode=="group" else 1500
                 if not 1<=len(payload)<=limit:raise ValueError(f"本文はUTF-8で1～{limit}バイトです")
-                try:outbound.put_nowait(("group" if mode=="group" else "chat",payload))
+                try:outbound.put_nowait(("group",payload) if mode=="group" else ("chat",(self.chat_generation,payload,text)))
                 except queue.Full:raise RuntimeError("送信キューが満杯です")
             self.add("自分（グループ）" if mode=="group" else "自分",text)
         def set_mode(self,mode):
@@ -207,6 +208,9 @@ def run(args):
                 self.mode=mode;self._refresh_status()
         def set_link_status(self,status):
             with self.lock:self.link_status=status;self._refresh_status()
+        def fail_direct(self,generation):
+            with self.lock:
+                if self.chat_generation==generation:self.chat_generation+=1
         def _refresh_status(self):
             self.status=f"{args.port} / {self.link_status} / {'グループ CHAT' if self.mode=='group' else '直接'}"
     chat=Chat();http=None
@@ -219,6 +223,7 @@ def run(args):
         try:old.close()
         except (serial.SerialException,OSError):pass
         count("usb_disconnects")
+        chat.fail_direct(chat.chat_generation)
         chat.set_link_status("USB再接続中")
         chat.add("システム",f"ATOM USB切断: {error}。COMポートの復帰を待っています")
         print(f"SERIAL DISCONNECTED at={event_time()}: {error}; reconnecting {args.port}",flush=True)
@@ -295,13 +300,13 @@ def run(args):
             chat.add(f"{group.group(1).decode('ascii')}>CHAT（グループ）",text)
             print(f"RX GROUP CHAT {len(text.encode('utf-8'))} bytes",flush=True)
         elif line.startswith(b"RELIABLE RETRY"):count("retries")
-        elif line.startswith(b"RELIABLE SENT"):count("tx_sent");tx_complete.set()
-        elif line.startswith(b"RELIABLE FAILED"):count("tx_failed");tx_complete.set()
-        elif line.startswith(b"RELIABLE BUSY"):count("tx_busy");tx_complete.set()
+        elif line.startswith(b"RELIABLE SENT"):count("tx_sent");tx_result["state"]="sent";tx_complete.set()
+        elif line.startswith(b"RELIABLE FAILED"):count("tx_failed");tx_result["state"]="failed";tx_complete.set()
+        elif line.startswith(b"RELIABLE BUSY"):count("tx_busy");tx_result["state"]="busy";tx_complete.set()
         elif line.startswith(b"GROUP TX OK"):
-            count("tx_sent");tx_complete.set();print("GROUP TX OK",flush=True)
+            count("tx_sent");tx_result["state"]="sent";tx_complete.set();print("GROUP TX OK",flush=True)
         elif line.startswith(b"GROUP TX FAILED"):
-            count("tx_failed");tx_complete.set();chat.add("システム",line.decode("utf-8",errors="replace"))
+            count("tx_failed");tx_result["state"]="failed";tx_complete.set();chat.add("システム",line.decode("utf-8",errors="replace"))
         elif line.startswith((b"LIVE RX stopped",b"STATE RX LISTEN")):
             chat.add("ATOM",line.decode("utf-8",errors="replace"))
             print(line.decode("utf-8",errors="replace"),flush=True)
@@ -314,8 +319,19 @@ def run(args):
         while not stop.is_set():
             try:kind,payload=outbound.get(timeout=.1)
             except queue.Empty:continue
+            if kind=="chat":
+                generation,payload,chat_text=payload
+                with chat.lock:stale=generation!=chat.chat_generation
+                if stale:
+                    chat.add("未送信",chat_text)
+                    outbound.task_done();continue
             while not connected.wait(.1):
                 if stop.is_set():outbound.task_done();return
+            if kind=="chat":
+                with chat.lock:stale=generation!=chat.chat_generation
+                if stale:
+                    chat.add("未送信",chat_text)
+                    outbound.task_done();continue
             active=current_port()
             if active is None:
                 outbound.task_done();continue
@@ -327,10 +343,11 @@ def run(args):
                 except (serial.SerialException,OSError) as error:
                     disconnect(error,active)
                 outbound.task_done();continue
-            tx_complete.clear();rx_ipv4.clear();count("tx_started")
+            tx_result["state"]=None;tx_complete.clear();rx_ipv4.clear();count("tx_started")
             prefix="y" if kind=="ip" else "k" if kind=="group" else "z"
             try:paced_write(active,(prefix+" "+payload.hex()+"\n").encode("ascii"))
             except (serial.SerialException,OSError) as error:
+                if kind=="chat":chat.fail_direct(generation);chat.add("送信失敗・後続は未送信",chat_text)
                 count("tx_failed");disconnect(error,active);outbound.task_done();continue
             print(f"TX {'IPv4' if kind=='ip' else 'GROUP CHAT' if kind=='group' else 'CHAT'} {len(payload)} bytes -> acoustic",flush=True)
             completed=tx_complete.wait(40 if kind=="group" else 180)
@@ -342,6 +359,11 @@ def run(args):
                 count("tx_failed")
                 message=f"TX completion timeout ({kind}, {len(payload)} bytes); ATOMの応答を確認してください"
                 print("WARNING: "+message,flush=True);chat.add("システム",message)
+            if kind=="chat":
+                if completed and tx_result["state"]=="sent":chat.add("送達",chat_text)
+                else:
+                    chat.fail_direct(generation)
+                    chat.add("送信失敗・後続は未送信",chat_text)
             elif kind=="ip" and args.turnaround>0 and not rx_ipv4.wait(args.turnaround):print(f"TURNAROUND {args.turnaround}s expired; sending next queued packet",flush=True)
             outbound.task_done()
     rx_thread=threading.Thread(target=serial_to_tun,daemon=True);tx_thread=threading.Thread(target=tun_to_serial,daemon=True)

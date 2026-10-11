@@ -178,6 +178,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         modeButton.setOnClickListener(v -> {
             boolean next = !groupMode;
             try {
+                if (usb.hasDirectPending()) throw new IllegalStateException("直接チャットの送達待ちが終わってから切り替えてください");
                 usb.setGroupMode(next);
                 groupMode = next;
                 getPreferences(MODE_PRIVATE).edit().putBoolean("groupMode", next).apply();
@@ -364,7 +365,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
             }
             if (groupMode) usb.sendGroup(text);
             else usb.send(text);
-            addBubble("自分", text, true);
+            addBubble(groupMode ? "自分" : "自分（送信待ち）", text, true);
             message.setText("");
         } catch (Exception error) {
             onStatus(error.getMessage());
@@ -373,6 +374,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
 
     private void startBell103(boolean caller) {
         if (monitorMode) { onStatus("モニターを終了してからBell 103を開始してください"); return; }
+        if (usb.hasDirectPending()) { onStatus("直接チャットの送達待ちが終わってから切り替えてください"); return; }
         try {
             vpnRequested = false;
             AtomVpnService.attachUsb(null);
@@ -591,6 +593,9 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         else if (text.startsWith("BELL103 SESSION STOP") || text.startsWith("BELL103 AUTO CONNECT TIMEOUT")) {bellActive = false;bellConnected = false;bellPending = false;refreshMonitorUi();shown = "Bell 103切断";}
         else if (text.startsWith("BELL103 AUTO ACK OK")) {bellPending = false;shown = "Bell 103送達確認";}
         else if (text.startsWith("BELL103 AUTO DATA RETRIES EXHAUSTED") || text.startsWith("BELL103 DATA QUEUE FAILED") || text.startsWith("ERROR: Bell 103")) bellPending = false;
+        else if (text.startsWith("AX25 DIRECT SENT")) {shown = "直接チャット送達確認";addNotice(shown);}
+        else if (text.startsWith("AX25 DIRECT FAILED") || text.startsWith("AX25 DIRECT BUSY_OR_INVALID")) {shown = "直接チャット送信失敗・後続は未送信";addNotice(shown);}
+        else if (text.startsWith("AX25 DIRECT USB_DISCONNECTED")) {shown = "USB切断・直接チャットは未送信";addNotice(shown);}
         else if (text.startsWith("STATE RX LISTEN")) shown = "ATOM接続済み・受信中";
         else if (text.startsWith("LIVE RX stopped")) shown = "受信停止中";
         else if (text.equals("USB切断")) {bellActive = false;bellConnected = false;bellPending = false;refreshMonitorUi();shown = "ATOM未接続";}

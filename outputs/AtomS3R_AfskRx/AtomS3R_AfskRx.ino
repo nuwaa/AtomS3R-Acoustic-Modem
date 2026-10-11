@@ -78,7 +78,7 @@ bool reliableSend(uint8_t pid,const uint8_t* payload,size_t length,void* context
 bool groupSend(const uint8_t* payload,size_t length,void* context);
 void groupDelivery(const char* source,uint32_t id,const uint8_t* text,size_t length,void* context);
 void reliableDelivery(uint8_t pid,const uint8_t* payload,size_t length,void* context);
-void reliableStatus(const char* state,uint16_t id,uint8_t current,uint8_t total,void* context);
+void reliableStatus(const char* state,uint16_t id,uint8_t current,uint8_t total,uint8_t pid,void* context);
 const char* bootModeName(BootMode mode);
 bool parseBootMode(const char* text,BootMode& mode);
 void activateHostMode(BootMode mode);
@@ -375,12 +375,12 @@ bool forwardUsbToAcoustic(PacketTransport&,const TransportPacket& packet,void*) 
   }
   if(packet.pid==ReliablePacketLink::HOST_REQUEST_PID){
     bool ok=reliableLink.beginSend(0xf0,packet.payload,packet.payloadLength);
-    if(!ok)Serial.println("RELIABLE BUSY_OR_INVALID");
+    if(!ok)Serial.println("RELIABLE BUSY_OR_INVALID PID=F0");
     return ok;
   }
   if(packet.pid==ReliablePacketLink::HOST_REQUEST_IPV4_PID){
     bool ok=reliableLink.beginSend(0xcc,packet.payload,packet.payloadLength);
-    if(!ok)Serial.println("RELIABLE BUSY_OR_INVALID");
+    if(!ok)Serial.println("RELIABLE BUSY_OR_INVALID PID=CC");
     return ok;
   }
   if((slipMode||pppMode)&&packet.pid==0xcc){
@@ -436,8 +436,8 @@ void reliableDelivery(uint8_t pid,const uint8_t* payload,size_t length,void*) {
   TransportPacket packet={nullptr,0,remoteCall,localCall,0x03,pid,payload,length,0};
   hostTransport->sendPacket(packet);screenStatus("RX RELIABLE OK");if(pid==0xf0)screenText(payload,length);
 }
-void reliableStatus(const char* state,uint16_t id,uint8_t current,uint8_t total,void*) {
-  if(!binaryHostMode())Serial.printf("RELIABLE %s ID=%u PART=%u/%u\n",state,(unsigned)id,(unsigned)current,(unsigned)total);
+void reliableStatus(const char* state,uint16_t id,uint8_t current,uint8_t total,uint8_t pid,void*) {
+  if(!binaryHostMode())Serial.printf("RELIABLE %s ID=%u PART=%u/%u PID=%02X\n",state,(unsigned)id,(unsigned)current,(unsigned)total,(unsigned)pid);
 }
 void printFrame(const uint8_t* raw,size_t length,size_t at) {
   Ax25View view;if(!Ax25Frame::parse(raw,length,view))return;
@@ -530,17 +530,46 @@ bool bell103ReceiveBurst(Bell103Role role,uint8_t* text,size_t capacity,size_t& 
   bool resume=liveRx;stopLiveReceiver(false);prepareReceiver();
   screenStatus(announce?"B103 RX 6 SEC":"B103 AUTO RX");
   if(announce)Serial.printf("BELL103 REC %u seconds -- transmit NOW\n",seconds);
-  int32_t block[256*2];bool ok=true;
+  int32_t block[256*2];bool ok=true,decodedEarly=false,earlyAttempted=false;
+  size_t activeSamples=0,quietSamples=0,longestQuiet=0;
+  uint32_t highestLevel=0,lowestLevel=UINT32_MAX;
   if(!capture(12000,false))ok=false; // 250 ms warm-up
   for(size_t pos=0;ok&&pos<maxSamples;){
     size_t count=maxSamples-pos;if(count>256)count=256;
     size_t received=0;
     esp_err_t err=i2s_channel_read(audio.rxChan(),block,count*2*sizeof(int32_t),&received,1000);
     if(err!=ESP_OK||received!=count*2*sizeof(int32_t)){ok=false;break;}
-    for(size_t i=0;i<count;++i)samples[pos+i]=(int16_t)(block[2*i]>>16);
+    uint32_t absoluteSum=0;
+    for(size_t i=0;i<count;++i){
+      int16_t sample=(int16_t)(block[2*i]>>16);samples[pos+i]=sample;
+      absoluteSum+=(uint32_t)(sample<0?-(int32_t)sample:sample);
+    }
     pos+=count;
+    if(!announce&&!earlyAttempted){
+      uint32_t level=absoluteSum/count;
+      if(level>highestLevel)highestLevel=level;
+      if(level<lowestLevel)lowestLevel=level;
+      if(level>=400){activeSamples+=count;quietSamples=0;}
+      else if(level<150){quietSamples+=count;if(quietSamples>longestQuiet)longestQuiet=quietSamples;}
+      else quietSamples=0;
+      // The Echo Base's mic noise breaks long runs of digital silence into
+      // roughly 60-100 ms stretches; a 50 ms tail is enough to try CRC.
+      if(activeSamples>=SAMPLE_RATE/2&&quietSamples>=SAMPLE_RATE/20&&pos>=SAMPLE_RATE){
+        earlyAttempted=true;
+        if(bell103Rx.decode(samples,pos,role,text,capacity,length)){
+          decodedEarly=true;
+          Serial.printf("BELL103 AUTO RX EARLY ms=%u\n",(unsigned)(pos*1000/SAMPLE_RATE));
+          break;
+        }
+      }
+    }
   }
-  if(ok)ok=bell103Rx.decode(samples,maxSamples,role,text,capacity,length);
+  if(ok&&!decodedEarly){
+    ok=bell103Rx.decode(samples,maxSamples,role,text,capacity,length);
+    if(ok&&!announce)Serial.printf("BELL103 AUTO RX TIMING high=%u low=%u active_ms=%u quiet_ms=%u early_tried=%u\n",
+      (unsigned)highestLevel,(unsigned)lowestLevel,(unsigned)(activeSamples*1000/SAMPLE_RATE),
+      (unsigned)(longestQuiet*1000/SAMPLE_RATE),(unsigned)earlyAttempted);
+  }
   heap_caps_free(samples);
   if(resume)startLiveReceiver();
   return ok;

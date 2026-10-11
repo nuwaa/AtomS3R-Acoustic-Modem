@@ -78,6 +78,7 @@ def main() -> int:
     parser.add_argument("--reverse-first", action="store_true")
     parser.add_argument("--direct-only", action="store_true")
     parser.add_argument("--host-hex", action="store_true")
+    parser.add_argument("--ordering-loss", action="store_true")
     args = parser.parse_args()
     atoms: list[Atom] = []
     result = {"ports": [args.a, args.b], "checks": {}}
@@ -132,6 +133,41 @@ def main() -> int:
 
         if args.host_hex:
             print("PASS: bidirectional USB-host group UTF-8 chat", flush=True)
+            return 0
+
+        if args.ordering_loss:
+            b.send("q")
+            if not until(atoms, lambda: any("LIVE RX stopped" in line for line in b.lines[-5:]), 4):
+                raise RuntimeError("could not stop B receiver for ordering test")
+            start_a, start_b = len(a.lines), len(b.lines)
+            first, second = "順序 01 横浜市", "順序 02 繁體中文"
+            a.send(f"g {first}\n")
+            if not until(atoms, lambda: any("GROUP TX OK" in line for line in a.lines[start_a:]), 15):
+                raise RuntimeError("first group transmission failed")
+            b.send("l")
+            if not until(atoms, lambda: any("STATE RX LISTEN" in line for line in b.lines[start_b:]), 5):
+                raise RuntimeError("B receiver did not resume")
+            second_start = len(a.lines)
+            a.send(f"g {second}\n")
+            if not until(atoms, lambda: any("GROUP TX OK" in line for line in a.lines[second_start:]), 15):
+                raise RuntimeError("second group transmission failed")
+            if not until(atoms, lambda: received(b, calls[0], first, start_b) and
+                         received(b, calls[0], second, start_b), 60):
+                raise RuntimeError("missing group message was not repaired")
+            tx_ids = list(dict.fromkeys(int(match.group(1)) for line in a.lines[start_a:]
+                      if (match := re.match(r"GROUP WIRE TX type=1 id=(\d+)$", line))))
+            rx_ids = [int(match.group(1)) for line in b.lines[start_b:]
+                      if (match := re.match(r"GROUP WIRE RX type=1 id=(\d+) from=" + re.escape(calls[0]) + r"$", line))]
+            if len(tx_ids) < 2 or tx_ids[1] not in rx_ids or tx_ids[0] not in rx_ids:
+                raise RuntimeError("ordering test did not observe both wire IDs")
+            if rx_ids.index(tx_ids[1]) >= rx_ids.index(tx_ids[0]):
+                raise RuntimeError("wire order was not inverted; repeat the test")
+            delivered = [line for line in b.lines[start_b:] if line.startswith(f"GROUP RX {calls[0]} #")]
+            texts = [line.split(": ", 1)[1] for line in delivered]
+            result["checks"]["ordered_recovery"] = texts == [first, second]
+            if not result["checks"]["ordered_recovery"]:
+                raise RuntimeError(f"out-of-order delivery: {texts!r}")
+            print("PASS: AX.25 group recovery delivered both messages in order", flush=True)
             return 0
 
         # Deliberately stop B's microphone while A sends one DATA. Once B

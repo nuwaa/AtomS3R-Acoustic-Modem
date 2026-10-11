@@ -17,6 +17,7 @@ from serial.tools import list_ports
 
 RX = re.compile(r"^USB_RX SRC=(\S+) DEST=(\S+) PID=([0-9A-Fa-f]{2}) HEX=([0-9A-Fa-f]*)$")
 GROUP_RX = re.compile(r"^USB_GROUP_RX SRC=([A-Z0-9]{1,6}) ID=(\d+) HEX=([0-9A-Fa-f]+)$")
+RELIABLE_CHAT = re.compile(r"^RELIABLE (START|SENT|FAILED|BUSY_OR_INVALID)\b.*PID=F0\b")
 HTML = r"""<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ATOM USB Chat</title><style>
 body{font-family:"Yu Gothic UI",sans-serif;background:#10151d;color:#eef3f8;margin:0}main{max-width:760px;margin:auto;height:100vh;display:flex;flex-direction:column}
@@ -48,6 +49,8 @@ class Bridge:
         self.mode = "direct"
         self.bell = "off"
         self.bell_pending = False
+        self.direct_queue = deque()
+        self.direct_active = None
         threading.Thread(target=self.reader, daemon=True).start()
         self.set_mode("direct")
 
@@ -82,9 +85,24 @@ class Bridge:
                 limit = 198 if mode == "group" else 1500
                 if not 1 <= len(payload) <= limit:
                     raise ValueError(f"本文はUTF-8で1～{limit}バイトです")
-                self.write_command(f"{'k' if mode == 'group' else 'z'} {payload.hex()}\n".encode("ascii"))
-                who = "自分（グループ）" if mode == "group" else "自分"
+                if mode == "group":
+                    self.write_command(f"k {payload.hex()}\n".encode("ascii"))
+                    who = "自分（グループ）"
+                else:
+                    if len(self.direct_queue) >= 16:
+                        raise ValueError("直接チャットの送信待ちは16件までです")
+                    self.direct_queue.append((text, payload))
+                    if self.direct_active is None:
+                        self.start_next_direct()
+                    who = "自分（送信待ち）"
         self.add(who, text)
+
+    def start_next_direct(self):
+        """Call with self.lock held; retain the head until SENT or FAILED."""
+        if self.direct_active is not None or not self.direct_queue:
+            return
+        self.direct_active = self.direct_queue[0]
+        self.write_command(f"z {self.direct_active[1].hex()}\n".encode("ascii"))
 
     def bell_action(self, action):
         if action not in ("caller", "answerer", "stop"):
@@ -92,6 +110,8 @@ class Bridge:
         with self.lock:
             if action != "stop" and self.bell != "off":
                 raise ValueError("Bell 103は既に開始しています。先に切断してください")
+            if action != "stop" and self.direct_queue:
+                raise ValueError("直接チャットの送達待ちが終わってからBell 103へ切り替えてください")
             if action != "stop":
                 self.write_command(b"group off\n")
                 self.mode = "direct"
@@ -107,6 +127,8 @@ class Bridge:
         with self.lock:
             if self.bell != "off":
                 raise ValueError("Bell 103を切断してからAX.25を選んでください")
+            if mode != "direct" and self.direct_queue:
+                raise ValueError("直接チャットの送達待ちが終わってから切り替えてください")
             self.write_command(f"group {'on' if mode == 'group' else 'off'}\n".encode("ascii"))
             self.mode = mode
             self.status = f"{self.port.port} 接続済み · {'グループ CHAT' if mode == 'group' else '直接'}"
@@ -127,6 +149,11 @@ class Bridge:
                 with self.lock:
                     self.bell = "off"
                     self.bell_pending = False
+                    abandoned = list(self.direct_queue)
+                    self.direct_active = None
+                    self.direct_queue.clear()
+                for text, _ in abandoned:
+                    self.add("未送信（USB切断）", text)
                 try:
                     self.port.close()
                 except Exception:
@@ -160,6 +187,26 @@ class Bridge:
                 self.recent_lines.append(line[:300])
         if line.startswith(("LIVE RX stopped", "STATE RX LISTEN")):
             self.add("ATOM", line)
+            return
+        direct_status = RELIABLE_CHAT.match(line)
+        if direct_status:
+            outcome = direct_status.group(1)
+            if outcome != "START":
+                with self.lock:
+                    current = self.direct_active
+                    cancelled = []
+                    if current is not None:
+                        self.direct_queue.popleft()
+                        self.direct_active = None
+                        if outcome != "SENT":
+                            cancelled = list(self.direct_queue)
+                            self.direct_queue.clear()
+                        elif self.mode == "direct" and self.bell == "off":
+                            self.start_next_direct()
+                if current is not None:
+                    self.add("送達" if outcome == "SENT" else "送信失敗", current[0])
+                    for text, _ in cancelled:
+                        self.add("未送信", text)
             return
         if line.startswith("BELL103 AUTO RX TEXT "):
             self.add("Bell 103", line.partition(": ")[2])

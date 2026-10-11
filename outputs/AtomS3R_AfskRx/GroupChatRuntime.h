@@ -39,20 +39,28 @@ class GroupChatRuntime {
     if(msg.type==GroupChatProtocol::TYPE_DATA){
       Peer* peer=findPeer(msg.source,true);if(!peer)return;
       if(!peer->known){peer->next=msg.id;peer->known=true;}
-      if(msg.id>peer->next && msg.id-peer->next<=REQUESTS)
-        for(uint32_t id=peer->next;id<msg.id;++id)arm(*peer,id,now);
-      if(!seen(*peer,msg.id)){
-        remember(*peer,msg.id);
-        if(deliver_)deliver_(msg.source,msg.id,msg.text,msg.textLength,context_);
+      if(msg.id<peer->next||seen(*peer,msg.id))return;
+      if(msg.id>peer->next){
+        if(msg.id-peer->next>REQUESTS){
+          // The missing range is beyond our bounded recovery buffer. Start a
+          // new visible run; older retransmissions must not appear after it.
+          clearPending(*peer);peer->next=msg.id;
+        }else{
+          for(uint32_t id=peer->next;id<msg.id;++id)arm(*peer,id,now);
+          if(hold(*peer,msg,now)){remember(*peer,msg.id);return;}
+          clearPending(*peer);peer->next=msg.id;
+        }
       }
-      if(msg.id>=peer->next)peer->next=msg.id+1;
+      remember(*peer,msg.id);
+      if(deliver_)deliver_(msg.source,msg.id,msg.text,msg.textLength,context_);
+      ++peer->next;flush(*peer);
       cancel(msg.source,msg.id);
     }else if(msg.type==GroupChatProtocol::TYPE_SUMMARY){
       Peer* peer=findPeer(msg.source,true);if(!peer)return;
       uint32_t first=read32(msg.text);
-      // A newly joined receiver must not fetch messages sent before it joined.
-      // Once DATA has established the peer, SUMMARY can repair later gaps.
-      if(!peer->known){peer->next=msg.id+1;peer->known=true;return;}
+      // If the first DATA was lost, recover only the latest message. Fetching
+      // the whole history here would replay a burst of old chat on join.
+      if(!peer->known){peer->next=msg.id;peer->known=true;arm(*peer,msg.id,now);return;}
       uint32_t end=msg.id-first<HISTORY?msg.id:first+HISTORY-1;
       for(uint32_t id=first;id<=end;++id)if(!seen(*peer,id))arm(*peer,id,now);
     }else if(msg.type==GroupChatProtocol::TYPE_NACK){
@@ -67,6 +75,7 @@ class GroupChatRuntime {
   }
   void service(uint32_t now){
     if(!enabled_||!send_)return;
+    for(auto& peer:peers_)expireGap(peer,now);
     if(retransmit_.active && due(now,retransmit_.at)){
       for(size_t i=0;i<HISTORY;++i)if(recoverable(history_[i],now)&&history_[i].id==retransmit_.id)
         {send_(history_[i].wire,history_[i].size,context_);break;}
@@ -98,9 +107,11 @@ class GroupChatRuntime {
   }
  private:
   static constexpr uint32_t FIRST_SUMMARY_MS=3000, SECOND_SUMMARY_MS=5000;
-  static constexpr uint32_t SUMMARY_MS=10000, RECOVERY_WINDOW_MS=60000;
+  static constexpr uint32_t SUMMARY_MS=10000, RECOVERY_WINDOW_MS=60000, ORDER_WAIT_MS=12000;
   struct History{uint32_t id=0;size_t size=0;uint32_t sentAt=0;uint8_t wire[220];};
-  struct Peer{char name[7]={};bool known=false;uint32_t next=0;uint32_t seenIds[32]={};size_t seenCount=0,seenNext=0;};
+  struct Pending{bool active=false;uint32_t id=0;size_t size=0;uint8_t text[GroupChatProtocol::MAX_TEXT];};
+  struct Peer{char name[7]={};bool known=false;uint32_t next=0;uint32_t seenIds[32]={};size_t seenCount=0,seenNext=0;
+              uint32_t gapAt=0;Pending pending[REQUESTS];};
   struct Request{bool active=false;char source[7]={};uint32_t id=0,at=0;uint8_t tries=0;};
   struct Retransmit{bool active=false;uint32_t id=0,at=0;};
   GroupChatProtocol protocol_;Send send_=nullptr;Deliver deliver_=nullptr;void* context_=nullptr;
@@ -123,6 +134,29 @@ class GroupChatRuntime {
   }
   static bool seen(const Peer& peer,uint32_t id){for(size_t i=0;i<peer.seenCount;++i)if(peer.seenIds[i]==id)return true;return false;}
   static void remember(Peer& peer,uint32_t id){peer.seenIds[peer.seenNext]=id;peer.seenNext=(peer.seenNext+1)%32;if(peer.seenCount<32)++peer.seenCount;}
+  static void clearPending(Peer& peer){for(auto& item:peer.pending)item.active=false;peer.gapAt=0;}
+  static bool hold(Peer& peer,const GroupChatProtocol::Message& msg,uint32_t now){
+    for(auto& item:peer.pending)if(!item.active){item.active=true;item.id=msg.id;item.size=msg.textLength;
+      memcpy(item.text,msg.text,msg.textLength);if(!peer.gapAt)peer.gapAt=now?now:1;return true;}
+    return false;
+  }
+  void flush(Peer& peer){
+    for(;;){Pending* found=nullptr;
+      for(auto& item:peer.pending)if(item.active&&item.id==peer.next){found=&item;break;}
+      if(!found)break;
+      if(deliver_)deliver_(peer.name,found->id,found->text,found->size,context_);
+      cancel(peer.name,found->id);found->active=false;++peer.next;
+    }
+    bool remaining=false;for(const auto& item:peer.pending)if(item.active){remaining=true;break;}
+    if(!remaining)peer.gapAt=0;
+  }
+  void expireGap(Peer& peer,uint32_t now){
+    if(!peer.gapAt||(uint32_t)(now-peer.gapAt)<ORDER_WAIT_MS)return;
+    uint32_t first=0;for(const auto& item:peer.pending)if(item.active&&(!first||item.id<first))first=item.id;
+    if(!first){peer.gapAt=0;return;}
+    for(auto& request:requests_)if(request.active&&!strcmp(request.source,peer.name)&&request.id<first)request.active=false;
+    peer.next=first;peer.gapAt=now;flush(peer);
+  }
   bool seenSource(const char* source,uint32_t id){Peer* peer=findPeer(source,false);return peer&&seen(*peer,id);}
   void cancel(const char* source,uint32_t id){for(auto& request:requests_)if(request.active&&request.id==id&&!strcmp(request.source,source))request.active=false;}
   void defer(const char* source,uint32_t id,uint32_t now){
