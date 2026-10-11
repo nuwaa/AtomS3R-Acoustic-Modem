@@ -18,6 +18,7 @@
 #include "GroupChatRuntime.h"
 #include "AcousticMode.h"
 #include "Bell103Overture.h"
+#include "Bell103Fsk.h"
 
 constexpr size_t SAMPLE_RATE = 48000;
 constexpr size_t SAMPLES = SAMPLE_RATE * 3;
@@ -51,6 +52,8 @@ enum class BootMode:uint8_t { Normal,Slip,Ppp };
 BootMode bootMode=BootMode::Normal;
 AcousticMode acousticMode=AcousticMode::Ax25;
 Bell103Overture bell103Overture;
+Bell103FskTx bell103Tx;
+Bell103FskRx bell103Rx;
 uint32_t liveMaxProcessUs=0;
 size_t liveBlocks=0;
 int32_t liveBlock[256*2];
@@ -74,6 +77,9 @@ bool parseBootMode(const char* text,BootMode& mode);
 void activateHostMode(BootMode mode);
 bool binaryHostMode();
 bool playBell103Overture();
+bool bell103SendDiagnostic(const uint8_t* text,size_t length,Bell103Role role);
+bool bell103ReceiveDiagnostic(Bell103Role role);
+bool bell103SelfTest();
 
 bool writeRegister(uint8_t address,uint8_t reg,uint8_t value) {
   Wire.beginTransmission(address);
@@ -467,6 +473,92 @@ bool playBell103Overture() {
   return ok;
 }
 
+bool bell103SendDiagnostic(const uint8_t* text,size_t length,Bell103Role role) {
+  if(binaryHostMode()||monitorMode||reliableLink.busy()||groupRuntime.enabled()) {
+    Serial.println("ERROR: Bell 103 diagnostic requires normal, direct, idle mode.");return false;
+  }
+  if(!bell103Tx.begin(text,length,role)) {
+    Serial.println("ERROR: Bell 103 text must be 1..80 UTF-8 bytes.");return false;
+  }
+  bool resume=liveRx;stopLiveReceiver(false);
+  screenStatus("B103 DATA TX");
+  if(!speakerEnable(true)){if(resume)startLiveReceiver();return false;}
+  int32_t block[256*2];bool ok=true;
+  while(!bell103Tx.finished()){
+    size_t count=bell103Tx.render(block,256);
+    if(!count||!audioSink(block,count,nullptr)){ok=false;break;}
+  }
+  int32_t silence[256*2]={};
+  for(int k=0;k<4;++k)if(!audioSink(silence,256,nullptr))ok=false;
+  if(!speakerEnable(false))ok=false;
+  Serial.printf("BELL103 DIAGNOSTIC TX %s role=%s bytes=%u bits=%u\n",ok?"OK":"FAILED",
+                role==Bell103Role::Originate?"originate":"answer",(unsigned)length,(unsigned)bell103Tx.bits());
+  if(resume)startLiveReceiver();
+  return ok;
+}
+
+bool bell103ReceiveDiagnostic(Bell103Role role) {
+  if(binaryHostMode()||monitorMode||reliableLink.busy()||groupRuntime.enabled()) {
+    Serial.println("ERROR: Bell 103 diagnostic requires normal, direct, idle mode.");return false;
+  }
+  constexpr size_t MAX_SAMPLES=6*SAMPLE_RATE;
+  int16_t* samples=(int16_t*)heap_caps_malloc(MAX_SAMPLES*sizeof(int16_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+  if(!samples){Serial.println("ERROR: Bell 103 capture allocation failed.");return false;}
+  bool resume=liveRx;stopLiveReceiver(false);prepareReceiver();
+  screenStatus("B103 RX 6 SEC");
+  Serial.println("BELL103 REC 6 seconds -- transmit NOW");
+  int32_t block[256*2];bool ok=true;
+  if(!capture(12000,false))ok=false; // 250 ms warm-up
+  for(size_t pos=0;ok&&pos<MAX_SAMPLES;){
+    size_t count=MAX_SAMPLES-pos;if(count>256)count=256;
+    size_t received=0;
+    esp_err_t err=i2s_channel_read(audio.rxChan(),block,count*2*sizeof(int32_t),&received,1000);
+    if(err!=ESP_OK||received!=count*2*sizeof(int32_t)){ok=false;break;}
+    for(size_t i=0;i<count;++i)samples[pos+i]=(int16_t)(block[2*i]>>16);
+    pos+=count;
+  }
+  uint8_t text[81];size_t length=0;
+  if(ok)ok=bell103Rx.decode(samples,MAX_SAMPLES,role,text,sizeof(text)-1,length);
+  if(ok){
+    text[length]=0;
+    Serial.printf("BELL103 RX CRC OK LEN=%u HEX=",(unsigned)length);
+    for(size_t i=0;i<length;++i)Serial.printf("%02X",text[i]);
+    Serial.println();Serial.print("BELL103 TEXT: ");Serial.write(text,length);Serial.println();
+    screenStatus("B103 RX CRC OK");screenText(text,length);
+  }else Serial.println("BELL103 RX NO VALID FRAME");
+  heap_caps_free(samples);
+  if(resume)startLiveReceiver();
+  return ok;
+}
+
+bool bell103SelfTest() {
+  if(binaryHostMode()||monitorMode||reliableLink.busy()||groupRuntime.enabled()) {
+    Serial.println("ERROR: Bell 103 self-test requires normal, direct, idle mode.");return false;
+  }
+  bool resume=liveRx;stopLiveReceiver(false);
+  const uint8_t message[]={'B','1','0','3',' ','T','E','S','T'};
+  bool ok=true;
+  int32_t block[256*2];uint8_t decoded[81];size_t length=0;
+  for(int role=0;role<2;++role){
+    Bell103Role txRole=role?Bell103Role::Answer:Bell103Role::Originate;
+    Bell103Role rxRole=role?Bell103Role::Originate:Bell103Role::Answer;
+    if(!bell103Tx.begin(message,sizeof(message),txRole)){ok=false;break;}
+    size_t count=0;
+    while(!bell103Tx.finished()){
+      size_t made=bell103Tx.render(block,256);
+      if(!made||count+made>SAMPLES){ok=false;break;}
+      for(size_t i=0;i<made;++i)pcm[count+i]=(int16_t)(block[2*i]>>16);
+      count+=made;
+    }
+    if(!ok||!bell103Rx.decode(pcm,count,rxRole,decoded,sizeof(decoded),length)||
+       length!=sizeof(message)||memcmp(decoded,message,length)){ok=false;break;}
+  }
+  haveRecording=false;
+  Serial.println(ok?"BELL103 SELFTEST PASS both bands CRC OK":"BELL103 SELFTEST FAILED");
+  if(resume)startLiveReceiver();
+  return ok;
+}
+
 bool sendPayload(uint8_t pid,const uint8_t* payload,size_t length) {
   if(monitorMode){Serial.println("ERROR: monitor mode is receive-only.");return false;}
   if(!payload||!length||length>220){if(!binaryHostMode())Serial.println("ERROR: payload must be 1..220 bytes.");return false;}
@@ -584,7 +676,7 @@ void loop() {
     bool resume=liveRx; stopLiveReceiver(false); dumpRecording(); if(resume)startLiveReceiver(); return;
   }
   if (!commandLength && c=='?') {
-    Serial.println("Commands: t <ASCII>; g <UTF-8>; k <UTF8-HEX>; group on|off|show; monitor on|off|show; acoustic show|ax25|bell103; bell103 tone; z <HEX>; y <HEX>; mode ppp; slip on; boot show|normal|slip|ppp|reset; u <HEX>; x <PIDHEX> <HEX>; c <SRC> <DEST>; l=RX; q=stop; r=batch; p=PCM."); return;
+    Serial.println("Commands: t <ASCII>; g <UTF-8>; k <UTF8-HEX>; group on|off|show; monitor on|off|show; acoustic show|ax25|bell103; bell103 tone|selftest|rx originate|rx answer|tx originate <text>|tx answer <text>; z <HEX>; y <HEX>; mode ppp; slip on; boot show|normal|slip|ppp|reset; u <HEX>; x <PIDHEX> <HEX>; c <SRC> <DEST>; l=RX; q=stop; r=batch; p=PCM."); return;
   }
   if (c=='\r') return;
   if (c=='\n') {
@@ -630,6 +722,21 @@ void loop() {
     }
     else if(!strcmp(commandLine,"bell103 tone")) {
       playBell103Overture();
+    }
+    else if(!strcmp(commandLine,"bell103 selftest")) {
+      bell103SelfTest();
+    }
+    else if(!strcmp(commandLine,"bell103 rx originate")) {
+      bell103ReceiveDiagnostic(Bell103Role::Originate);
+    }
+    else if(!strcmp(commandLine,"bell103 rx answer")) {
+      bell103ReceiveDiagnostic(Bell103Role::Answer);
+    }
+    else if(!strncmp(commandLine,"bell103 tx originate ",21)) {
+      bell103SendDiagnostic((const uint8_t*)commandLine+21,commandLength-21,Bell103Role::Originate);
+    }
+    else if(!strncmp(commandLine,"bell103 tx answer ",18)) {
+      bell103SendDiagnostic((const uint8_t*)commandLine+18,commandLength-18,Bell103Role::Answer);
     }
     else if(!strncmp(commandLine,"acoustic ",9)) {
       AcousticMode requested;
