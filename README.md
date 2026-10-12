@@ -2,6 +2,8 @@
 
 M5Stack ATOM S3R と ATOMIC ECHO BASE（Atomic Voice Base）を使う、音響 AX.25 モデムの現行ソースの保存版です。PC または Android を USB-C で ATOM に接続し、ATOM 間では空中の 1200 bps Bell 202 AFSK で通信します。無線送信機は使用しません。
 
+10月5日からの作業と実機試験は [開発日記](docs/DEVELOPMENT_DIARY.md) に記録し、以後の作業も追記します。
+
 ## ハードウェア
 
 - 各ノード: ATOM S3R、ATOMIC ECHO BASE、USB-C データケーブル、USB ホストとなる PC または Android 端末
