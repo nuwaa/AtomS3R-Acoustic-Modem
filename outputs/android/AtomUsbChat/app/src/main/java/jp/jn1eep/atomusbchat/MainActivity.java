@@ -1,11 +1,13 @@
 package jp.jn1eep.atomusbchat;
 
 import android.app.Activity;
+import android.Manifest;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.ColorStateList;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.Insets;
@@ -611,6 +613,11 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         if (text.startsWith("USB-C接続済み")) {
             try { startForegroundService(new Intent(this, UsbConnectionService.class)); }
             catch (RuntimeException error) { append("USB背景受信の開始失敗: " + error.getMessage()); }
+            if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                    && !getPreferences(MODE_PRIVATE).getBoolean("notificationPrompted", false)) {
+                getPreferences(MODE_PRIVATE).edit().putBoolean("notificationPrompted", true).apply();
+                requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 103);
+            }
         } else if (text.equals("USB切断")) stopService(new Intent(this, UsbConnectionService.class));
         if(text.startsWith("USB-C接続済み"))status.postDelayed(() -> {
             try {

@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application android:theme="@style/AppTheme" android:label="ATOM Chat" android:usesCleartextTraffic="true">
         <service android:name=".AtomVpnService" android:permission="android.permission.BIND_VPN_SERVICE" android:exported="false">
             <intent-filter><action android:name="android.net.VpnService"/></intent-filter>
