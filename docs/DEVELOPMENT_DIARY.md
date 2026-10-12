@@ -1,5 +1,7 @@
 # 開発日記 — AtomS3R Acoustic Modem
 
+**日本語** | [繁體中文（臺灣）](DEVELOPMENT_DIARY.zh-TW.md) | [简体中文](DEVELOPMENT_DIARY.zh-CN.md) | [English](DEVELOPMENT_DIARY.en.md)
+
 ATOM S3R + Atomic Echo Base を使った音響TNCの開発記録。日付が確かでない初期作業は「ごろ」と記し、実機で通過した試験と未解決の課題を区別する。10月11日以降のBell 103開発は `feature/bell103` ブランチ上の作業であり、`main` の保存版に実装済みという意味ではない。今後の作業も日付順に末尾へ追記する。
 
 ## 2026年10月5日ごろ — 音をデータにする
