@@ -31,3 +31,9 @@ We revised display order after interruptions and reduced Bell 103 receive waitin
 We therefore added a 16-entry inbox on the ATOM. Android now confirms over USB only after saving a message. After the screen had been locked for over five minutes, a long F09 message followed by short F10 appeared once each and in order. R01, delivered while the app process was stopped, was retrieved once after restart. Direct and group chat also worked in both directions. The inbox is held in RAM, however: power loss or more than 16 unconfirmed arrivals can still lose data.
 
 Other attempts on the same day failed to obtain an acoustic ACK from the remote ATOM. This is separate from ATOM-to-Android USB delivery. The next investigation is to hold device placement constant and determine from logs whether the receiver failed to decode the frame or decoded it but failed to return an ACK.
+
+## October 13, 2026 — Measuring Bell 103 latency
+
+We shortened the connected-state receive window from a maximum of nine seconds to six seconds. An early decode triggered by a quiet gap can now retry after more signal arrives. After building and flashing two ATOMs, a five-minute test delivered and acknowledged all 15 messages with two retransmissions. A 30-minute test delivered all 32 messages exactly once, acknowledged all 32, and used six retransmissions.
+
+In the 30-minute log, median time from send command to text delivery was six seconds and to ACK was nine seconds. The earlier 30-minute log measured 14 and 17 seconds respectively. Acoustic conditions and send intervals differed, so this is not a controlled performance comparison. The overture still lasts about 11 seconds; connection completed in about 20 seconds in this run. Bidirectional AX.25 direct chat passed after both the five-minute and 30-minute tests.
