@@ -28,6 +28,6 @@ if errorlevel 1 (echo DEVICE OFFLINE. Keep it unlocked and wireless debugging en
 if errorlevel 1 (echo INSTALL FAILED.& pause& exit /b 3)
 "%ADB%" -s !CONNECT_ADDRESS! shell am force-stop jp.jn1eep.atomusbchat
 "%ADB%" -s !CONNECT_ADDRESS! shell am start -n jp.jn1eep.atomusbchat/.MainActivity
-echo INSTALL PASS: ATOM USB Chat 0.3.5
+echo INSTALL PASS: ATOM USB Chat 0.3.6
 pause
 exit /b 0

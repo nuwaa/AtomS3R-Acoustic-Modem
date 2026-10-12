@@ -10,6 +10,7 @@
 #include "Ax25Frame.h"
 #include "AcousticAx25Transport.h"
 #include "UsbCdcTransport.h"
+#include "HostInbox.h"
 #include "SlipCdcTransport.h"
 #include "PppCdcTransport.h"
 #include "TransportRouter.h"
@@ -31,6 +32,7 @@ float* discriminator = nullptr;
 AfskDecoder decoder;
 AcousticAx25Transport acousticTransport;
 UsbCdcTransport usbTransport(Serial);
+HostInbox hostInbox(Serial);
 SlipCdcTransport slipTransport(Serial);
 PppCdcTransport pppTransport(Serial);
 PacketTransport* hostTransport=&usbTransport;
@@ -216,6 +218,7 @@ bool binaryHostMode(){return slipMode||pppMode;}
 
 void setup() {
   Serial.begin(115200);
+  hostInbox.begin(esp_random());
   unsigned long start = millis();
   while (!Serial && millis()-start < 5000) delay(10);
   esp_reset_reason_t resetReason=esp_reset_reason();
@@ -425,16 +428,21 @@ bool groupSend(const uint8_t* payload,size_t length,void*) {
   return ok;
 }
 void groupDelivery(const char* source,uint32_t id,const uint8_t* text,size_t length,void*) {
-  Serial.printf("USB_GROUP_RX SRC=%s ID=%lu HEX=",source,(unsigned long)id);
-  for(size_t i=0;i<length;++i)Serial.printf("%02X",text[i]);
-  Serial.println();
+  if(!hostInbox.enabled()){
+    Serial.printf("USB_GROUP_RX SRC=%s ID=%lu HEX=",source,(unsigned long)id);
+    for(size_t i=0;i<length;++i)Serial.printf("%02X",text[i]);
+    Serial.println();
+  } else hostInbox.store(source,"CHAT",0xf1,text,length);
   Serial.printf("GROUP RX %s #%lu: ",source,(unsigned long)id);
   Serial.write(text,length);Serial.println();
   screenStatus("GROUP RX / FCS OK");screenText(text,length);
 }
 void reliableDelivery(uint8_t pid,const uint8_t* payload,size_t length,void*) {
   TransportPacket packet={nullptr,0,remoteCall,localCall,0x03,pid,payload,length,0};
-  hostTransport->sendPacket(packet);screenStatus("RX RELIABLE OK");if(pid==0xf0)screenText(payload,length);
+  if(pid==0xf0 && hostTransport==&usbTransport && hostInbox.enabled())
+    hostInbox.store(packet.source,packet.destination,pid,payload,length);
+  else hostTransport->sendPacket(packet);
+  screenStatus("RX RELIABLE OK");if(pid==0xf0)screenText(payload,length);
 }
 void reliableStatus(const char* state,uint16_t id,uint8_t current,uint8_t total,uint8_t pid,void*) {
   if(!binaryHostMode())Serial.printf("RELIABLE %s ID=%u PART=%u/%u PID=%02X\n",state,(unsigned)id,(unsigned)current,(unsigned)total,(unsigned)pid);
@@ -1026,6 +1034,15 @@ void loop() {
       else if(reliableLink.busy())Serial.println("ERROR: reliable transfer is busy; retry group send.");
       else if(!groupRuntime.sendText((const uint8_t*)commandLine+2,length,millis()))Serial.println("GROUP TX FAILED (length 1..198 bytes).");
       else Serial.println("GROUP TX OK");
+    }
+    else if(!strcmp(commandLine,"inbox on"))hostInbox.enable();
+    else if(!strcmp(commandLine,"inbox off"))hostInbox.disable();
+    else if(!strcmp(commandLine,"inbox pull"))hostInbox.pull();
+    else if(!strncmp(commandLine,"inbox ack ",10)){
+      unsigned long session=0,sequence=0;char extra=0;
+      if(sscanf(commandLine+10,"%lx %lu %c",&session,&sequence,&extra)!=2 ||
+         !hostInbox.acknowledge((uint32_t)session,(uint32_t)sequence))
+        Serial.println("USB_INBOX ACK_IGNORED");
     }
     else if(usbTransport.acceptLine(commandLine)) {}
     else if(!strcmp(commandLine,"monitor show")) {

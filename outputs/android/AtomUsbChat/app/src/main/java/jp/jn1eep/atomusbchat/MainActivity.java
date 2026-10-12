@@ -18,6 +18,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.TextUtils;
 import android.view.ViewGroup;
 import android.view.Gravity;
@@ -70,6 +71,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
     private final ExecutorService commandExecutor = Executors.newSingleThreadExecutor();
     private final Handler reconnectHandler = new Handler(Looper.getMainLooper());
     private String permissionRequestedDevice;
+    private long lastInboxPullMs;
     private final Runnable reconnectPoll = new Runnable() {
         @Override public void run() {
             if (!usb.isConnected()) {
@@ -81,6 +83,10 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
                     onStatus("USB許可待ち");
                     usb.request(device);
                 }
+            }
+            if (usb.isConnected() && SystemClock.elapsedRealtime()-lastInboxPullMs>=5000) {
+                lastInboxPullMs=SystemClock.elapsedRealtime();
+                usb.requestInbox();
             }
             reconnectHandler.postDelayed(this, 1500);
         }
@@ -276,6 +282,11 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         root.addView(composer);
         setContentView(root);
         refreshMonitorUi();
+        java.util.List<InboxStore.Item> saved=usb.savedInbox();
+        if(!saved.isEmpty()){
+            addNotice("保存済みの受信履歴（"+saved.size()+"件）");
+            for(InboxStore.Item item:saved)addBubble(item.source,item.text,false);
+        }
 
         IntentFilter filter = new IntentFilter();
         filter.addAction(UsbCdcTransport.ACTION_PERMISSION);
