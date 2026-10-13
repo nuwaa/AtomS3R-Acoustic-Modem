@@ -2,7 +2,7 @@
 
 [日本語](README.md) | **繁體中文（臺灣）** | [简体中文](README.zh-CN.md) | [English](README.en.md)
 
-這是使用 M5Stack ATOM S3R 與 ATOMIC ECHO BASE（Atomic Voice Base）的音響 AX.25 數據機原始碼保存版。電腦或 Android 裝置透過 USB-C 連接 ATOM；兩台 ATOM 則以空氣中的 1200 bps Bell 202 AFSK 傳輸資料，不使用無線電發射機。本頁說明 `main` 分支的保存版；Bell 103 功能另於 `feature/bell103` 分支開發。
+此 `feature/bell103` 分支是 M5Stack ATOM S3R 與 ATOMIC ECHO BASE（Atomic Voice Base）音響數據機的開發版。在保存的 1200 bps Bell 202 / AX.25 模式之外，加入可切換的 300 bps Bell 103 模式。電腦或 Android 裝置以 USB-C 連接 ATOM；兩台 ATOM 透過空氣中的聲音通訊，不使用無線電發射機。僅含 AX.25 的保存版仍在 `main` 與 `v0.3.1` 標籤。
 
 10 月 5 日起的開發過程與實機測試記錄在[開發日誌](docs/DEVELOPMENT_DIARY.zh-TW.md)，後續也會持續補充。
 
@@ -47,9 +47,9 @@
 
 音響鏈路為半雙工；音量、裝置位置與環境雜音會影響成功率及延遲。電腦診斷工具與測試原始碼位於 `outputs/`。錄音、日誌、裝置 Flash 備份、APK 及本機設定不列入公開內容。
 
-## 後續規劃
+## Bell 103 開發狀態
 
-計畫加入可與現有 AX.25/Bell 202 路徑切換的 300 bps Bell 103 音響模式。**此 `main` 保存版尚未包含該功能**；相關開發位於 `feature/bell103`。
+Bell 103 已提供撥號風格連線音、發呼／應答交握、半雙工 UTF-8 文字、ACK 與重傳，可從電腦和 Android 聊天畫面操作。10 月 13 日兩台 ATOM 的 30 分鐘實機測試中，32 則訊息各送達一次、取得 32 次 ACK，沒有重傳；之後 AX.25 直接聊天亦雙向通過。這只是該次裝置擺放的結果，不保證其他聲學環境。連線音未變更；等待時間與限制記錄在開發日誌。
 
 ## 授權
 

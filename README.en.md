@@ -2,7 +2,7 @@
 
 [日本語](README.md) | [繁體中文（臺灣）](README.zh-TW.md) | [简体中文](README.zh-CN.md) | **English**
 
-This is a snapshot of the working acoustic AX.25 modem source for the M5Stack ATOM S3R and ATOMIC ECHO BASE (Atomic Voice Base). A PC or Android device connects to an ATOM over USB-C; two ATOM units communicate through the air using 1200 bps Bell 202 AFSK. No radio transmitter is used. This page describes the `main` snapshot. Bell 103 work is being developed separately on `feature/bell103`.
+This `feature/bell103` branch is a development version of the acoustic modem for the M5Stack ATOM S3R and ATOMIC ECHO BASE (Atomic Voice Base). It adds a selectable 300 bps Bell 103 mode alongside the preserved 1200 bps Bell 202 / AX.25 mode. A PC or Android device connects to an ATOM over USB-C; two ATOM units communicate through the air, without a radio transmitter. The AX.25-only snapshot remains on `main` and tag `v0.3.1`.
 
 Work and hardware tests since October 5 are recorded in the [development diary](docs/DEVELOPMENT_DIARY.en.md), which will be extended as development continues.
 
@@ -47,9 +47,9 @@ On a PC, use the ATOM's USB CDC serial port. A serial monitor at **115200 bps** 
 
 The acoustic path is half-duplex. Volume, placement, and ambient noise affect delivery rate and latency. PC diagnostic tools and test sources are in `outputs/`. Recordings, logs, device flash backups, APKs, and local settings are excluded from publication.
 
-## Planned work
+## Bell 103 development status
 
-A switchable 300 bps Bell 103 acoustic mode is planned alongside the existing AX.25/Bell 202 path. It is **not implemented in this `main` snapshot**; development is on `feature/bell103`.
+Bell 103 provides dial-up-style connection sound, caller/answerer handshake, half-duplex UTF-8 text, ACK, and retransmission through the PC and Android chat controls. On two ATOM units, the October 13 hardware run delivered 32 messages exactly once with 32 ACKs and no retransmissions in 30 minutes; AX.25 direct chat passed afterward. This is a result for that device placement, not a guarantee under other acoustic conditions. Connection sound remains unchanged. The development diary records timing experiments and limitations.
 
 ## License
 
