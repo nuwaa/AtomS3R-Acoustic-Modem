@@ -103,8 +103,8 @@ def main() -> int:
             for atom in atoms:
                 atom.send("group off\n")
             until(atoms, lambda: False, 1)
-            result["checks"]["direct_a_to_b"] = direct_trial(atoms, a, b, "直接通信 横浜市")
-            result["checks"]["direct_b_to_a"] = direct_trial(atoms, b, a, "直接通信 繁體中文")
+            result["checks"]["direct_a_to_b"] = direct_trial(atoms, a, b, "こんにちは!")
+            result["checks"]["direct_b_to_a"] = direct_trial(atoms, b, a, "你好!")
             if not all(result["checks"].values()):
                 raise RuntimeError("direct reliable chat failed")
             print("PASS: bidirectional direct reliable UTF-8 chat", flush=True)
