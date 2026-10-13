@@ -49,7 +49,7 @@ The acoustic path is half-duplex. Volume, placement, and ambient noise affect de
 
 ## Bell 103 development status
 
-Bell 103 provides dial-up-style connection sound, caller/answerer handshake, half-duplex UTF-8 text, ACK, and retransmission through the PC and Android chat controls. On two ATOM units, the October 13 hardware run delivered 32 messages exactly once with 32 ACKs and no retransmissions in 30 minutes; AX.25 direct chat passed afterward. This is a result for that device placement, not a guarantee under other acoustic conditions. Connection sound remains unchanged. The development diary records timing experiments and limitations.
+Bell 103 provides dial-up-style connection sound, caller/answerer handshake, half-duplex UTF-8 text, ACK, and retransmission through the PC and Android chat controls. It uses project-specific synchronization and framing; interoperability with ordinary telephone-line Bell 103 modems has not been verified. On two ATOM units, the October 13 hardware run delivered 32 messages exactly once with 32 ACKs and no retransmissions in 30 minutes; AX.25 direct chat passed afterward. This is a result for that device placement, not a guarantee under other acoustic conditions. Connection sound remains unchanged. The development diary records timing experiments and limitations.
 
 ## License
 
