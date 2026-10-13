@@ -49,7 +49,7 @@ The acoustic path is half-duplex. Volume, placement, and ambient noise affect de
 
 ## Planned work
 
-A switchable 300 bps Bell 103 acoustic mode is planned alongside the existing AX.25/Bell 202 path. It is **not implemented in this `main` snapshot**; development is on `feature/bell103`.
+The switchable 300 bps Bell 103 mode is published on the [feature/bell103 branch](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/feature/bell103). It is **not included in this `main` snapshot**. The branch README and [development diary](docs/DEVELOPMENT_DIARY.en.md) describe the connection sound, half-duplex chat, ACK/retry behavior, and hardware test results.
 
 ## License
 
