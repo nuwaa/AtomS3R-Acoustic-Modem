@@ -49,15 +49,15 @@ def main():
             print("CONNECTED: both ATOMs", flush=True)
 
             for sender_name, sender, receiver_name, message in (
-                (args.caller, caller, args.answerer, "AUTO01"),
-                (args.answerer, answerer, args.caller, "AUTO02"),
+                (args.caller, caller, args.answerer, "こんにちは!"),
+                (args.answerer, answerer, args.caller, "你好!"),
             ):
                 delivered = acknowledged = False
-                send(sender, f"bell103 data send {message}")
+                sender.write((f"bell103 data send {message}\n").encode("utf-8"))
 
                 def on_data(name, line):
                     nonlocal delivered, acknowledged
-                    if name == receiver_name and f"BELL103 AUTO RX TEXT len=6: {message}" in line:
+                    if name == receiver_name and f"BELL103 AUTO RX TEXT len={len(message.encode('utf-8'))}: {message}" in line:
                         delivered = True
                     if name == sender_name and "BELL103 AUTO ACK OK" in line:
                         acknowledged = True
