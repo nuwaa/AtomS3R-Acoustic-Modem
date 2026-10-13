@@ -49,7 +49,7 @@
 
 ## 后续计划
 
-计划加入可与现有 AX.25/Bell 202 路径切换的 300 bps Bell 103 声学模式。**这个 `main` 保存版尚未实现该功能**；相关开发位于 `feature/bell103`。
+可切换的 300 bps Bell 103 声学模式已公开在 [feature/bell103 分支](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/feature/bell103)。**这个 `main` 保存版尚未包含该功能**。分支 README 和[开发日记](docs/DEVELOPMENT_DIARY.zh-CN.md)记录连接音、半双工聊天、ACK／重传及实机测试结果。
 
 ## 许可证
 
