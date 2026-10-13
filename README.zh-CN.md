@@ -2,7 +2,7 @@
 
 [日本語](README.md) | [繁體中文（臺灣）](README.zh-TW.md) | **简体中文** | [English](README.en.md)
 
-此 `feature/bell103` 分支是 M5Stack ATOM S3R 与 ATOMIC ECHO BASE（Atomic Voice Base）声学调制解调器的开发版。在保存的 1200 bps Bell 202 / AX.25 模式之外，加入了可切换的 300 bps Bell 103 模式。电脑或 Android 设备通过 USB-C 连接 ATOM；两台 ATOM 通过空气中的声音通信，不使用无线电发射机。仅含 AX.25 的保存版仍位于 `main` 和标签 `v0.3.1`。
+此 `feature/bell103` 分支是 M5Stack ATOM S3R 与 ATOMIC ECHO BASE（Atomic Voice Base）声学调制解调器的开发版。在保存的 1200 bps Bell 202 / AX.25 模式之外，加入了可切换的 300 bps Bell 103 模式。电脑或 Android 设备通过 USB-C 连接 ATOM；两台 ATOM 通过空气中的声音通信，不使用无线电发射机。仅含 AX.25 的保存版仍位于 [main 分支](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/main)和标签 `v0.3.1`。
 
 10 月 5 日以来的开发过程与实机测试记录在[开发日记](docs/DEVELOPMENT_DIARY.zh-CN.md)，后续也会继续补充。
 

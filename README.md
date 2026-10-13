@@ -2,7 +2,7 @@
 
 **日本語** | [繁體中文（臺灣）](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [English](README.en.md)
 
-この `feature/bell103` ブランチは、M5Stack ATOM S3R と ATOMIC ECHO BASE（Atomic Voice Base）を使う音響モデムの開発版です。保存済みのBell 202 / AX.25（1200 bps）に、切替可能なBell 103（300 bps）を追加しています。PCまたはAndroidをUSB-CでATOMに接続し、ATOM間は空中の音で通信します。無線送信機は使用しません。AX.25のみの保存版は `main` とタグ `v0.3.1` にあります。
+この `feature/bell103` ブランチは、M5Stack ATOM S3R と ATOMIC ECHO BASE（Atomic Voice Base）を使う音響モデムの開発版です。保存済みのBell 202 / AX.25（1200 bps）に、切替可能なBell 103（300 bps）を追加しています。PCまたはAndroidをUSB-CでATOMに接続し、ATOM間は空中の音で通信します。無線送信機は使用しません。AX.25のみの保存版は[mainブランチ](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/main)とタグ `v0.3.1` にあります。
 
 10月5日からの作業と実機試験は [開発日記](docs/DEVELOPMENT_DIARY.md) に記録し、以後の作業も追記します。
 

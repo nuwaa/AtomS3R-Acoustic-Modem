@@ -2,7 +2,7 @@
 
 [日本語](README.md) | **繁體中文（臺灣）** | [简体中文](README.zh-CN.md) | [English](README.en.md)
 
-此 `feature/bell103` 分支是 M5Stack ATOM S3R 與 ATOMIC ECHO BASE（Atomic Voice Base）音響數據機的開發版。在保存的 1200 bps Bell 202 / AX.25 模式之外，加入可切換的 300 bps Bell 103 模式。電腦或 Android 裝置以 USB-C 連接 ATOM；兩台 ATOM 透過空氣中的聲音通訊，不使用無線電發射機。僅含 AX.25 的保存版仍在 `main` 與 `v0.3.1` 標籤。
+此 `feature/bell103` 分支是 M5Stack ATOM S3R 與 ATOMIC ECHO BASE（Atomic Voice Base）音響數據機的開發版。在保存的 1200 bps Bell 202 / AX.25 模式之外，加入可切換的 300 bps Bell 103 模式。電腦或 Android 裝置以 USB-C 連接 ATOM；兩台 ATOM 透過空氣中的聲音通訊，不使用無線電發射機。僅含 AX.25 的保存版仍在 [main 分支](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/main)與 `v0.3.1` 標籤。
 
 10 月 5 日起的開發過程與實機測試記錄在[開發日誌](docs/DEVELOPMENT_DIARY.zh-TW.md)，後續也會持續補充。
 

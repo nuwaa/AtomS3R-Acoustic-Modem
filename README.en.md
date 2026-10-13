@@ -2,7 +2,7 @@
 
 [日本語](README.md) | [繁體中文（臺灣）](README.zh-TW.md) | [简体中文](README.zh-CN.md) | **English**
 
-This `feature/bell103` branch is a development version of the acoustic modem for the M5Stack ATOM S3R and ATOMIC ECHO BASE (Atomic Voice Base). It adds a selectable 300 bps Bell 103 mode alongside the preserved 1200 bps Bell 202 / AX.25 mode. A PC or Android device connects to an ATOM over USB-C; two ATOM units communicate through the air, without a radio transmitter. The AX.25-only snapshot remains on `main` and tag `v0.3.1`.
+This `feature/bell103` branch is a development version of the acoustic modem for the M5Stack ATOM S3R and ATOMIC ECHO BASE (Atomic Voice Base). It adds a selectable 300 bps Bell 103 mode alongside the preserved 1200 bps Bell 202 / AX.25 mode. A PC or Android device connects to an ATOM over USB-C; two ATOM units communicate through the air, without a radio transmitter. The AX.25-only snapshot remains on the [main branch](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/main) and tag `v0.3.1`.
 
 Work and hardware tests since October 5 are recorded in the [development diary](docs/DEVELOPMENT_DIARY.en.md), which will be extended as development continues.
 
