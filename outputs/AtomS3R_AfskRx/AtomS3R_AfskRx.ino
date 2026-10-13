@@ -784,6 +784,8 @@ void bell103DataCommand(const char* command,size_t length) {
     }
     bell103AutoFailureReported=false;
     Serial.printf("BELL103 DATA QUEUED seq=%u len=%u\n",(unsigned)bell103Data.pendingSequence(),(unsigned)textLength);
+    screenStatus("B103 DATA QUEUED");
+    screenText((const uint8_t*)command+18,textLength);
     return;
   }
   if(!strcmp(command,"bell103 data tx")){
@@ -871,6 +873,10 @@ void serviceBell103Auto() {
     if(bell103Data.next(millis(),burst,sizeof(burst),length,kind)){
       if(bell103SendBurst(burst,length,bell103SessionRole)){
         bell103Data.sent(kind,millis());
+        if(kind==Bell103DataKind::Data){
+          screenStatus("B103 DATA TX");
+          screenText(burst+Bell103DataLink::HEADER_BYTES,length-Bell103DataLink::HEADER_BYTES);
+        }
         Serial.printf("BELL103 AUTO TX DATA type=%u seq=%u\n",(unsigned)kind,
                       (unsigned)((uint16_t)burst[8]|((uint16_t)burst[9]<<8)));
       }else Serial.println("BELL103 AUTO TX DATA FAILED");
