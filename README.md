@@ -49,7 +49,7 @@ PC 側は ATOM の USB CDC シリアルポートを使用します。まずシ�
 
 ## 今後
 
-将来、Bell 103 方式の 300 bps 音響モデムを追加し、現行 AX.25/Bell 202 経路と切り替える予定です。この保存版には実装していません。
+Bell 103方式の300 bps音響モデムは、[feature/bell103ブランチ](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/feature/bell103)で公開しています。この`main`保存版には含まれません。接続音、半二重チャット、ACK・再送の開発状況と実機試験結果は、ブランチのREADMEと[開発日記](docs/DEVELOPMENT_DIARY.md)をご覧ください。
 
 ## ライセンス
 
