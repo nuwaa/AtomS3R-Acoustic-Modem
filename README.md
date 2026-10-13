@@ -6,6 +6,8 @@
 
 10月5日からの作業と実機試験は [開発日記](docs/DEVELOPMENT_DIARY.md) に記録し、以後の作業も追記します。
 
+2台の実機デモをiPhoneで撮る手順は[撮影台本](docs/VIDEO_SHOOTING_GUIDE.md)を参照してください。
+
 ## ハードウェア
 
 - 各ノード: ATOM S3R、ATOMIC ECHO BASE、USB-C データケーブル、USB ホストとなる PC または Android 端末

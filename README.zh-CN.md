@@ -6,6 +6,8 @@
 
 10 月 5 日以来的开发过程与实机测试记录在[开发日记](docs/DEVELOPMENT_DIARY.zh-CN.md)，后续也会继续补充。
 
+使用 iPhone 拍摄两台实机演示的步骤，请参阅[拍摄脚本](docs/VIDEO_SHOOTING_GUIDE.zh-CN.md)。
+
 ## 硬件
 
 - 每个节点：ATOM S3R、ATOMIC ECHO BASE、USB-C 数据线，以及充当 USB 主机的电脑或 Android 设备。

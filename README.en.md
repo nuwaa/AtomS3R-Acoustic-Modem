@@ -6,6 +6,8 @@ This `feature/bell103` branch is a development version of the acoustic modem for
 
 Work and hardware tests since October 5 are recorded in the [development diary](docs/DEVELOPMENT_DIARY.en.md), which will be extended as development continues.
 
+See the [filming guide](docs/VIDEO_SHOOTING_GUIDE.en.md) for a two-node iPhone demonstration.
+
 ## Hardware
 
 - Each node: an ATOM S3R, ATOMIC ECHO BASE, USB-C data cable, and a PC or Android device acting as USB host.
