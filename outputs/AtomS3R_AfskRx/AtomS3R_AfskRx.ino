@@ -93,7 +93,7 @@ bool bell103SessionSelfTest();
 bool bell103DataSelfTest();
 bool bell103SendBurst(const uint8_t* payload,size_t length,Bell103Role role);
 bool bell103ReceiveBurst(Bell103Role role,uint8_t* payload,size_t capacity,size_t& length,
-                         unsigned seconds=6,bool announce=true);
+                         unsigned seconds=6,bool announce=true,bool yieldForHost=false);
 void bell103SessionCommand(const char* command);
 void bell103DataCommand(const char* command,size_t length);
 void bell103AutoCommand(const char* command);
@@ -529,7 +529,7 @@ bool bell103SendDiagnostic(const uint8_t* text,size_t length,Bell103Role role) {
 }
 
 bool bell103ReceiveBurst(Bell103Role role,uint8_t* text,size_t capacity,size_t& length,
-                         unsigned seconds,bool announce) {
+                         unsigned seconds,bool announce,bool yieldForHost) {
   length=0;
   if(!text||!capacity||seconds<1||seconds>9)return false;
   const size_t maxSamples=(size_t)seconds*SAMPLE_RATE;
@@ -538,10 +538,12 @@ bool bell103ReceiveBurst(Bell103Role role,uint8_t* text,size_t capacity,size_t& 
   bool resume=liveRx;stopLiveReceiver(false);prepareReceiver();
   screenStatus(announce?"B103 RX 6 SEC":"B103 AUTO RX");
   if(announce)Serial.printf("BELL103 REC %u seconds -- transmit NOW\n",seconds);
-  int32_t block[256*2];bool ok=true,decodedEarly=false;
+  int32_t block[256*2];bool ok=true,decodedEarly=false,hostPending=false;
   unsigned earlyAttempts=0;size_t lastAttemptAt=0,lastAttemptActive=0;
   size_t activeSamples=0,quietSamples=0,longestQuiet=0;
   uint32_t highestLevel=0,lowestLevel=UINT32_MAX;
+  uint32_t recentLevels[24]={};size_t recentCount=0,recentIndex=0;
+  uint32_t recentLevelSum=0;
   if(!capture(12000,false))ok=false; // 250 ms warm-up
   for(size_t pos=0;ok&&pos<maxSamples;){
     size_t count=maxSamples-pos;if(count>256)count=256;
@@ -558,15 +560,25 @@ bool bell103ReceiveBurst(Bell103Role role,uint8_t* text,size_t capacity,size_t& 
       uint32_t level=absoluteSum/count;
       if(level>highestLevel)highestLevel=level;
       if(level<lowestLevel)lowestLevel=level;
+      recentLevelSum-=recentLevels[recentIndex];
+      recentLevels[recentIndex]=level;recentLevelSum+=level;
+      recentIndex=(recentIndex+1)%24;
+      if(recentCount<24)++recentCount;
       if(level>=400){activeSamples+=count;quietSamples=0;}
       else if(level<150){quietSamples+=count;if(quietSamples>longestQuiet)longestQuiet=quietSamples;}
       else quietSamples=0;
-      // The Echo Base's mic noise breaks long runs of digital silence into
-      // roughly 60-100 ms stretches; a 50 ms tail is enough to try CRC.
-      // A noise gap can precede the end of a burst. Retry CRC after more
-      // signal arrives instead of waiting out the entire capture window.
+      // In an established idle session, return to loop() when USB input
+      // arrives. Never interrupt an acoustic burst that has begun.
+      if(yieldForHost&&activeSamples==0&&pos>=SAMPLE_RATE/10&&Serial.available()){
+        hostPending=true;
+        Serial.printf("BELL103 AUTO RX YIELD HOST ms=%u\n",(unsigned)(pos*1000/SAMPLE_RATE));
+        break;
+      }
+      // Averages across ~128 ms so brief microphone noise does not reset the
+      // end-of-burst detector. CRC still decides whether capture may stop.
+      // A quiet gap within a burst can fail CRC; retry after more signal.
       if(earlyAttempts<4&&activeSamples>=SAMPLE_RATE/2&&
-         quietSamples>=SAMPLE_RATE/20&&pos>=SAMPLE_RATE&&
+         recentCount==24&&recentLevelSum<24*250&&pos>=SAMPLE_RATE&&
          (!earlyAttempts||(pos-lastAttemptAt>=SAMPLE_RATE/2&&
                            activeSamples-lastAttemptActive>=SAMPLE_RATE/4))){
         ++earlyAttempts;lastAttemptAt=pos;lastAttemptActive=activeSamples;
@@ -578,7 +590,7 @@ bool bell103ReceiveBurst(Bell103Role role,uint8_t* text,size_t capacity,size_t& 
       }
     }
   }
-  if(ok&&!decodedEarly){
+  if(ok&&!decodedEarly&&!hostPending){
     ok=bell103Rx.decode(samples,maxSamples,role,text,capacity,length);
     if(ok&&!announce)Serial.printf("BELL103 AUTO RX TIMING high=%u low=%u active_ms=%u quiet_ms=%u early_tried=%u\n",
       (unsigned)highestLevel,(unsigned)lowestLevel,(unsigned)(activeSamples*1000/SAMPLE_RATE),
@@ -586,7 +598,7 @@ bool bell103ReceiveBurst(Bell103Role role,uint8_t* text,size_t capacity,size_t& 
   }
   heap_caps_free(samples);
   if(resume)startLiveReceiver();
-  return ok;
+  return ok&&!hostPending;
 }
 
 bool bell103ReceiveDiagnostic(Bell103Role role) {
@@ -868,11 +880,12 @@ void serviceBell103Auto() {
       bell103AutoFailureReported=true;Serial.println("BELL103 AUTO DATA RETRIES EXHAUSTED");
     }
   }
-  // A maximum-size 80-byte burst lasts about 3.1 s. A six-second window
-  // leaves acoustic margin while bounding the idle host-command delay.
-  unsigned seconds=bell103Session.state()==Bell103SessionState::Idle?6:
-                   bell103Session.connected()?6:9;
-  if(!bell103ReceiveBurst(bell103SessionRole,burst,sizeof(burst),length,seconds,false))return;
+  // Keep the connected receive window long enough to reduce boundary loss.
+  // USB commands still interrupt idle capture immediately, so this does not
+  // add host-command latency when no acoustic burst is in progress.
+  unsigned seconds=bell103Session.state()==Bell103SessionState::Idle?6:9;
+  if(!bell103ReceiveBurst(bell103SessionRole,burst,sizeof(burst),length,seconds,false,
+                          bell103Session.connected()))return;
   if(Bell103Session::decode(burst,length,control)){
     bool wasConnected=bell103Session.connected();
     bell103Session.received(control,millis());

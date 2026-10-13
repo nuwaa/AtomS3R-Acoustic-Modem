@@ -31,19 +31,25 @@ def main():
         print(f"connect_total_s={(connected-start).total_seconds():.0f}")
 
     sent = {}
+    first_transmissions = []
     deliveries = []
     acks = []
+    current = None
     for time, message in events:
-        match = re.search(r"\bSEND (SOAK\d{3})\b", message)
+        match = re.search(r"\bSEND (SOAK\d{3}) (COM\d+)->(COM\d+)\b", message)
         if match:
             sent[match.group(1)] = time
+            current = (match.group(1), match.group(2), False)
+        if current and not current[2] and message.startswith(current[1] + ": BELL103 AUTO TX DATA type=1"):
+            first_transmissions.append((time-sent[current[0]]).total_seconds())
+            current = (current[0], current[1], True)
         match = re.search(r"BELL103 AUTO RX TEXT len=\d+: (SOAK\d{3})$", message)
         if match and match.group(1) in sent:
             deliveries.append((time-sent[match.group(1)]).total_seconds())
         match = re.search(r"\bACKED (SOAK\d{3})\b", message)
         if match and match.group(1) in sent:
             acks.append((time-sent[match.group(1)]).total_seconds())
-    for label, values in (("delivery", deliveries), ("ack", acks)):
+    for label, values in (("first_transmission", first_transmissions), ("delivery", deliveries), ("ack", acks)):
         if values:
             print(f"{label}_s count={len(values)} median={median(values):.1f} min={min(values):.1f} max={max(values):.1f}")
 
