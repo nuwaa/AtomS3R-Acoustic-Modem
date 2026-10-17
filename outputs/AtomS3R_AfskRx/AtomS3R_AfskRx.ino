@@ -27,6 +27,8 @@ constexpr size_t SAMPLE_RATE = 48000;
 constexpr size_t SAMPLES = SAMPLE_RATE * 3;
 I2SClass audio;
 es8311_handle_t codec = nullptr;
+uint8_t speakerVolume=50;
+uint8_t microphoneGainDb=6;
 int16_t* pcm = nullptr; // interleaved I2S slots, NOT 96000 Hz mono
 float* discriminator = nullptr;
 AfskDecoder decoder;
@@ -109,10 +111,32 @@ bool speakerEnable(bool enabled) {
   if (enabled) {
     if (!writeRegister(0x43,0x07,0x00) || !writeRegister(0x43,0x0d,0xff) ||
         !writeRegister(0x43,0x03,0x6f) || !writeRegister(0x43,0x05,0xff)) return false;
-    return es8311_voice_volume_set(codec,50,nullptr)==ESP_OK && es8311_voice_mute(codec,false)==ESP_OK;
+    return es8311_voice_volume_set(codec,speakerVolume,nullptr)==ESP_OK && es8311_voice_mute(codec,false)==ESP_OK;
   }
   bool ok=es8311_voice_mute(codec,true)==ESP_OK;
   return writeRegister(0x43,0x05,0x00) && ok;
+}
+
+bool validMicrophoneGain(int gain) { return gain>=0&&gain<=42&&gain%6==0; }
+
+void audioSettingsCommand(const char* command) {
+  if(!strcmp(command,"audio show")) {
+    Serial.printf("AUDIO CONFIG volume=%u gain_db=%u\n",speakerVolume,microphoneGainDb);
+    return;
+  }
+  int value=-1;char extra=0;
+  if(sscanf(command,"audio volume %d %c",&value,&extra)==1&&value>=0&&value<=100) {
+    if(es8311_voice_volume_set(codec,value,nullptr)!=ESP_OK){Serial.println("ERROR: audio volume could not be applied.");return;}
+    speakerVolume=(uint8_t)value;preferences.putUChar("volume",speakerVolume);
+    audioSettingsCommand("audio show");return;
+  }
+  value=-1;
+  if(sscanf(command,"audio gain %d %c",&value,&extra)==1&&validMicrophoneGain(value)) {
+    if(es8311_microphone_gain_set(codec,(es8311_mic_gain_t)(value/6))!=ESP_OK){Serial.println("ERROR: audio gain could not be applied.");return;}
+    microphoneGainDb=(uint8_t)value;preferences.putUChar("micgain",microphoneGainDb);
+    audioSettingsCommand("audio show");return;
+  }
+  Serial.println("ERROR: use audio show|volume <0..100>|gain <0,6,..42>.");
 }
 
 void screenStatus(const char* status) {
@@ -249,6 +273,10 @@ void setup() {
   } else Serial.println("WARNING: display init failed; Serial reception still available.");
   if (!psramFound()) fatal("ERROR: enable OPI PSRAM (ATOM S3R).");
   if(!preferences.begin("afsk",false))fatal("ERROR: NVS preferences.");
+  speakerVolume=preferences.getUChar("volume",50);
+  if(speakerVolume>100)speakerVolume=50;
+  microphoneGainDb=preferences.getUChar("micgain",6);
+  if(!validMicrophoneGain(microphoneGainDb))microphoneGainDb=6;
   String savedSource=preferences.getString("src","ATOMA");
   String savedDestination=preferences.getString("dst","ATOMB");
   if(validCall(savedSource.c_str())&&validCall(savedDestination.c_str())) {
@@ -292,8 +320,8 @@ void setup() {
   clock.sample_frequency = SAMPLE_RATE;
   if (es8311_init(codec,&clock,ES8311_RESOLUTION_32,ES8311_RESOLUTION_32) != ESP_OK ||
       es8311_microphone_config(codec,false) != ESP_OK ||
-      es8311_microphone_gain_set(codec,ES8311_MIC_GAIN_6DB) != ESP_OK ||
-      es8311_voice_volume_set(codec,50,nullptr) != ESP_OK ||
+      es8311_microphone_gain_set(codec,(es8311_mic_gain_t)(microphoneGainDb/6)) != ESP_OK ||
+      es8311_voice_volume_set(codec,speakerVolume,nullptr) != ESP_OK ||
       es8311_voice_mute(codec,true) != ESP_OK)
     fatal("ERROR: codec init.");
   if (!writeRegister(0x43,0x07,0x00) || !writeRegister(0x43,0x0d,0xff) ||
@@ -325,7 +353,7 @@ bool capture(size_t count, bool save) {
 void prepareReceiver() {
   speakerEnable(false);
   es8311_microphone_config(codec,false);
-  es8311_microphone_gain_set(codec,ES8311_MIC_GAIN_6DB);
+  es8311_microphone_gain_set(codec,(es8311_mic_gain_t)(microphoneGainDb/6));
   int32_t stale[256*2];
   size_t total=0;
   for (int pass=0;pass<64;++pass) {
@@ -1045,6 +1073,9 @@ void loop() {
     }
     else if(!strncmp(commandLine,"bell103 data ",13)){
       bell103DataCommand(commandLine,commandLength);
+    }
+    else if(!strncmp(commandLine,"audio ",6)){
+      audioSettingsCommand(commandLine);
     }
     else if(acousticMode==AcousticMode::Bell103 && strcmp(commandLine,"acoustic show") &&
             strcmp(commandLine,"acoustic ax25")){

@@ -1,6 +1,7 @@
 package jp.jn1eep.atomusbchat;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.Manifest;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -29,7 +30,10 @@ import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import java.util.Locale;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -57,6 +61,15 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
     private Button bellCallerButton;
     private Button bellAnswerButton;
     private Button bellStopButton;
+    private int speakerVolume = 50;
+    private int microphoneGainDb = 6;
+    private int audioProfile = 1;
+    private SeekBar activeVolumeSlider;
+    private TextView activeVolumeValue;
+    private RadioGroup activeGainChoices;
+    private RadioGroup activeProfileChoices;
+    private TextView activeAudioFeedback;
+    private boolean updatingAudioControls;
     private boolean bellActive = false;
     private boolean bellConnected = false;
     private boolean bellPending = false;
@@ -84,7 +97,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
                     usb.request(device);
                 }
             }
-            if (usb.isConnected() && SystemClock.elapsedRealtime()-lastInboxPullMs>=5000) {
+            if (usb.isConnected() && !bellActive && SystemClock.elapsedRealtime()-lastInboxPullMs>=5000) {
                 lastInboxPullMs=SystemClock.elapsedRealtime();
                 usb.requestInbox();
             }
@@ -208,6 +221,9 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         bellActions.addView(bellAnswerButton, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         bellActions.addView(bellStopButton, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         details.addView(bellActions);
+        Button audioSettings = smallButton("音響設定  ▸");
+        audioSettings.setOnClickListener(v -> showAudioSettings());
+        details.addView(audioSettings);
         monitorButton = smallButton(monitorMode ? "モニターを終了" : "受信専用モニター開始");
         monitorButton.setOnClickListener(v -> setMonitorMode(!monitorMode));
         details.addView(monitorButton);
@@ -298,6 +314,128 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
     }
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+
+    private TextView audioLabel(String text, int size) {
+        TextView label = new TextView(this);
+        label.setText(text);
+        label.setTextSize(size);
+        label.setTextColor(Color.rgb(39, 49, 44));
+        label.setPadding(0, dp(8), 0, dp(4));
+        return label;
+    }
+
+    private void refreshAudioControls() {
+        updatingAudioControls = true;
+        if (activeVolumeSlider != null) activeVolumeSlider.setProgress(speakerVolume);
+        if (activeVolumeValue != null) activeVolumeValue.setText(speakerVolume + "%");
+        if (activeGainChoices != null) activeGainChoices.check(2000 + microphoneGainDb / 6);
+        if (activeProfileChoices != null) activeProfileChoices.check(3000 + audioProfile);
+        updatingAudioControls = false;
+    }
+
+    private void applyAudioSettings(int volume, int gainDb, boolean setVolume, boolean setGain) {
+        try {
+            if (!usb.isConnected()) throw new IllegalStateException("ATOMをUSB接続してから調整してください");
+            if (setVolume) usb.setSpeakerVolume(volume);
+            if (setGain) usb.setMicrophoneGain(gainDb);
+            speakerVolume = volume;
+            microphoneGainDb = gainDb;
+            refreshAudioControls();
+            if (activeAudioFeedback != null) activeAudioFeedback.setText("ATOMへ設定を送信しました。反映結果を確認中…");
+        } catch (RuntimeException error) {
+            refreshAudioControls();
+            if (activeAudioFeedback != null) activeAudioFeedback.setText(error.getMessage());
+            onStatus(error.getMessage());
+        }
+    }
+
+    private void showAudioSettings() {
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(20), dp(12), dp(20), dp(18));
+        card.setBackgroundColor(Color.WHITE);
+        scroll.addView(card);
+        card.addView(audioLabel("音響TNC — 音響設定", 18));
+        card.addView(audioLabel("動作環境", 13));
+        RadioGroup profiles = new RadioGroup(this);
+        String[] profileNames = {"近距離（低ゲイン）", "標準", "騒音環境（試験用）", "カスタム設定"};
+        for (int index = 0; index < profileNames.length; index++) {
+            RadioButton choice = new RadioButton(this);
+            choice.setId(3000 + index);
+            choice.setText(profileNames[index]);
+            choice.setTextSize(14);
+            profiles.addView(choice);
+        }
+        activeProfileChoices = profiles;
+        card.addView(profiles);
+        card.addView(audioLabel("スピーカー音量", 16));
+        TextView volumeValue = audioLabel(speakerVolume + "%", 14);
+        activeVolumeValue = volumeValue;
+        card.addView(volumeValue);
+        SeekBar slider = new SeekBar(this);
+        slider.setMax(100);
+        activeVolumeSlider = slider;
+        card.addView(slider);
+        card.addView(audioLabel("小                                                        大", 12));
+        card.addView(audioLabel("マイクゲイン", 16));
+        RadioGroup gains = new RadioGroup(this);
+        gains.setOrientation(RadioGroup.HORIZONTAL);
+        for (int gain = 0; gain <= 42; gain += 6) {
+            RadioButton choice = new RadioButton(this);
+            choice.setId(2000 + gain / 6);
+            choice.setText(String.valueOf(gain));
+            choice.setTextSize(13);
+            gains.addView(choice);
+        }
+        activeGainChoices = gains;
+        // A horizontal container keeps all eight 6 dB steps reachable on narrow phones.
+        android.widget.HorizontalScrollView horizontal = new android.widget.HorizontalScrollView(this);
+        horizontal.addView(gains);
+        card.addView(horizontal);
+        card.addView(audioLabel("0～42 dB、6 dB刻み。大きすぎると雑音や音割れに注意してください。", 12));
+        card.addView(audioLabel("受信診断", 16));
+        card.addView(audioLabel("PCMレベル: 未測定\nクリッピング: 未測定\n受信成功率: 未測定", 13));
+        TextView feedback = audioLabel("ATOMから現在の設定を取得中…", 12);
+        activeAudioFeedback = feedback;
+        card.addView(feedback);
+        refreshAudioControls();
+        profiles.setOnCheckedChangeListener((group, checkedId) -> {
+            if (updatingAudioControls) return;
+            int selected = checkedId - 3000;
+            if (selected < 0 || selected > 3) return;
+            audioProfile = selected;
+            if (selected == 0) applyAudioSettings(35, 0, true, true);
+            else if (selected == 1) applyAudioSettings(50, 6, true, true);
+            else if (selected == 2) applyAudioSettings(75, 12, true, true);
+        });
+        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (fromUser) volumeValue.setText(progress + "%");
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                audioProfile = 3;
+                applyAudioSettings(seekBar.getProgress(), microphoneGainDb, true, false);
+            }
+        });
+        gains.setOnCheckedChangeListener((group, checkedId) -> {
+            if (updatingAudioControls || checkedId < 2000 || checkedId > 2007) return;
+            audioProfile = 3;
+            applyAudioSettings(speakerVolume, (checkedId - 2000) * 6, false, true);
+        });
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(scroll).setPositiveButton("閉じる", null).create();
+        dialog.setOnDismissListener(ignored -> {
+            activeVolumeSlider = null;
+            activeVolumeValue = null;
+            activeGainChoices = null;
+            activeProfileChoices = null;
+            activeAudioFeedback = null;
+        });
+        dialog.show();
+        try { usb.requestAudioSettings(); }
+        catch (RuntimeException error) { feedback.setText(error.getMessage()); }
+    }
 
     private GradientDrawable rounded(int color, int radius) {
         GradientDrawable background = new GradientDrawable();
@@ -601,6 +739,21 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
     }
     @Override public void onStatus(String text) { runOnUiThread(() -> {
         String shown = text;
+        if (text.startsWith("AUDIO CONFIG ")) {
+            java.util.regex.Matcher settings = java.util.regex.Pattern.compile("volume=(\\d+) gain_db=(\\d+)").matcher(text);
+            if (settings.find()) {
+                speakerVolume = Integer.parseInt(settings.group(1));
+                microphoneGainDb = Integer.parseInt(settings.group(2));
+                audioProfile = speakerVolume == 35 && microphoneGainDb == 0 ? 0
+                        : speakerVolume == 50 && microphoneGainDb == 6 ? 1
+                        : speakerVolume == 75 && microphoneGainDb == 12 ? 2 : 3;
+                refreshAudioControls();
+                if (activeAudioFeedback != null) activeAudioFeedback.setText("ATOMに反映済み: 音量 " + speakerVolume + "% / マイク " + microphoneGainDb + " dB");
+            }
+            return;
+        } else if (text.startsWith("ERROR: audio ")) {
+            if (activeAudioFeedback != null) activeAudioFeedback.setText(text);
+        }
         if (text.startsWith("USB-C接続済み")) {monitorConfirmed = false;bellActive = false;bellConnected = false;bellPending = false;refreshMonitorUi();shown = "ATOM接続済み";}
         else if (text.startsWith("BELL103 AUTO RX CONTROL") && text.contains("state=connected")) {bellConnected = true;refreshMonitorUi();shown = "Bell 103接続済み";}
         else if (text.startsWith("BELL103 SESSION STOP") || text.startsWith("BELL103 AUTO CONNECT TIMEOUT")) {bellActive = false;bellConnected = false;bellPending = false;refreshMonitorUi();shown = "Bell 103切断";}
@@ -633,7 +786,8 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         if(text.startsWith("USB-C接続済み"))status.postDelayed(() -> {
             try {
                 if (monitorMode) {usb.setGroupMode(false);usb.setMonitorMode(true);}
-                else usb.setGroupMode(groupMode);
+                else if (!bellActive) usb.setGroupMode(groupMode);
+                usb.requestAudioSettings();
                 if (vpnRequested && !monitorMode) {
                     AtomVpnService.attachUsb(usb::sendIpv4);
                     startService(new Intent(this, AtomVpnService.class));

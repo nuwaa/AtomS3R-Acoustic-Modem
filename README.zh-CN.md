@@ -38,6 +38,8 @@
 
 电脑端使用 ATOM 的 USB CDC 串口。先以 **115200 bps** 打开串口监视器，输入 `?` 可查看命令列表。若使用 Python 聊天界面，请把 [settings.example.json](outputs/environment/settings.example.json) 复制为 `outputs/environment/settings.json`，填写端口名和 Python 库路径。安装 `pyserial` 后，可在仓库根目录运行 `python outputs/usb_chat_web.py --port COM6`，然后在电脑浏览器打开 `http://127.0.0.1:8766/`。不要将本地设置提交到 Git；同一个 COM 端口不能由多个程序同时打开。
 
+在 Android 应用的「详细」→「音响设置」中，可以调整 ATOM 扬声器音量（0～100%）和 ES8311 麦克风增益（0～42 dB，每档 6 dB）。提供近距离、标准、噪声环境（试验用）和自定义设置。ATOM 会保存数值，重新连接后仍可使用；默认值为 50% 和 6 dB。接收诊断栏目前显示「未测定」，测量功能尚未实现。USB 串口命令为 `audio show`、`audio volume 50`、`audio gain 6`。AX.25 与 Bell 103 共用这些设置。
+
 ## 已实现功能与验证状态
 
 - ES8311 的 48 kHz PCM 输入／输出、1200/2200 Hz Bell 202 AFSK、1200 bps AX.25 UI 帧、HDLC/NRZI 和 FCS/CRC 校验。

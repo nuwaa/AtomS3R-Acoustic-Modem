@@ -38,6 +38,8 @@ Enable USB host (OTG) on Android and connect the ATOM with USB-C. In the app, ta
 
 On a PC, use the ATOM's USB CDC serial port. A serial monitor at **115200 bps** accepts `?` for a command list. To run the Python chat UI, copy [settings.example.json](outputs/environment/settings.example.json) to `outputs/environment/settings.json` and set the port and Python library locations. After installing `pyserial`, run, for example, `python outputs/usb_chat_web.py --port COM6` from the repository root, then open `http://127.0.0.1:8766/` on the PC. Do not commit local settings. Only one program can open a COM port at a time.
 
+In the Android app, open **Details → Audio settings** to adjust the ATOM speaker volume (0–100%) and ES8311 microphone gain (0–42 dB in 6 dB steps). Near-field, standard, and experimental noisy-environment presets are available alongside custom settings. The ATOM saves the values across reconnects; defaults are 50% and 6 dB. The receive-diagnostics fields currently say “not measured”; measurement is not implemented. Over USB serial, use `audio show`, `audio volume 50`, or `audio gain 6`. Both AX.25 and Bell 103 use these settings.
+
 ## Implemented features and verification
 
 - ES8311 48 kHz PCM input/output; 1200/2200 Hz Bell 202 AFSK; 1200 bps AX.25 UI frames; HDLC/NRZI; FCS/CRC validation.

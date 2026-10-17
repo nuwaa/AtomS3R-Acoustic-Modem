@@ -38,6 +38,8 @@
 
 電腦端使用 ATOM 的 USB CDC 序列埠。先以 **115200 bps** 開啟序列監控程式，輸入 `?` 可查看指令清單。若要使用 Python 聊天介面，請將 [settings.example.json](outputs/environment/settings.example.json) 複製為 `outputs/environment/settings.json`，填入連接埠及 Python 函式庫位置。安裝 `pyserial` 後，可在儲存庫根目錄執行 `python outputs/usb_chat_web.py --port COM6`，再於電腦瀏覽器開啟 `http://127.0.0.1:8766/`。請勿將本機設定提交至 Git；同一個 COM 埠無法同時由多個程式開啟。
 
+在 Android 應用程式的「詳細」→「音響設定」中，可調整 ATOM 喇叭音量（0～100%）及 ES8311 麥克風增益（0～42 dB，每次 6 dB）。提供近距離、標準、噪音環境（試驗用）及自訂設定。ATOM 會儲存數值，重新連接後仍可使用；預設為 50% 與 6 dB。接收診斷欄目前顯示「未測定」，尚未實作測量。USB 序列指令為 `audio show`、`audio volume 50`、`audio gain 6`。AX.25 與 Bell 103 共用這些設定。
+
 ## 已實作功能與驗證狀態
 
 - ES8311 的 48 kHz PCM 輸入／輸出、1200/2200 Hz Bell 202 AFSK、1200 bps AX.25 UI 訊框、HDLC/NRZI，以及 FCS/CRC 驗證。

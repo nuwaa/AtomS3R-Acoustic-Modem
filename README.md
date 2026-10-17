@@ -40,6 +40,8 @@ Android 端末は USB ホスト（OTG）を有効にし、USB-C で ATOM に接�
 
 PC 側は ATOM の USB CDC シリアルポートを使用します。まずシリアルモニターで **115200 bps** に接続し、`?` でコマンド一覧を表示できます。Python の PC チャット画面を使う場合は、[outputs/environment/settings.example.json](outputs/environment/settings.example.json) を `outputs/environment/settings.json` にコピーし、ポート名と Python ライブラリの場所を設定します。`pyserial` を導入後、リポジトリ直下で `python outputs/usb_chat_web.py --port COM6` のように起動し、`http://127.0.0.1:8766/` を PC のブラウザで開きます。ローカル設定は Git へ登録しないでください。同じ COM ポートを複数のプログラムで同時に開けません。
 
+Androidアプリの「詳細」→「音響設定」で、ATOMのスピーカー音量（0～100%）とES8311マイクゲイン（0～42 dB、6 dB刻み）を変更できます。近距離・標準・騒音環境（試験用）のプリセットとカスタム設定があり、ATOMは値を保存して再接続後も使います。初期値は50%・6 dBです。画面下部の受信診断値は現在「未測定」の表示で、測定機能はまだありません。PCのシリアルからは `audio show`、`audio volume 50`、`audio gain 6` を使用できます。音量・ゲインはAX.25とBell 103で共用します。
+
 ## 実装済み機能と状態
 
 - ES8311 の 48 kHz PCM 入出力、1200/2200 Hz Bell 202 AFSK、1200 bps AX.25 UI フレーム、HDLC/NRZI、FCS/CRC 検証
