@@ -73,6 +73,7 @@ def main():
                 except (serial.SerialException, RuntimeError, TimeoutError):
                     pass
                 command(port, "ggwave off")
+                wait_for(port, "GGWAVE STOPPED", 5)
 
 
 if __name__ == "__main__":

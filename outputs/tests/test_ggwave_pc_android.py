@@ -57,6 +57,7 @@ def main():
             await_line(port, "GGWAVE MODE=", 5)
         finally:
             send(port, "ggwave off")
+            await_line(port, "GGWAVE STOPPED", 5)
 
 
 if __name__ == "__main__":

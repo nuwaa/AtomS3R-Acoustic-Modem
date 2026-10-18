@@ -52,6 +52,7 @@ class Bridge:
         self.direct_queue = deque()
         self.direct_active = None
         threading.Thread(target=self.reader, daemon=True).start()
+        self.write_command(b"acoustic ax25\n")
         self.set_mode("direct")
 
     def add(self, who, text):
@@ -167,6 +168,7 @@ class Bridge:
                             time.sleep(0.4)
                             replacement.reset_input_buffer()
                             self.port = replacement
+                            self.write_command(b"acoustic ax25\n")
                             self.write_command(f"group {'on' if self.mode == 'group' else 'off'}\n".encode("ascii"))
                             self.status = f"{self.port_name} 再接続済み · {'グループ CHAT' if self.mode == 'group' else '直接'}"
                         self.add("システム", "ATOM USB再接続")
