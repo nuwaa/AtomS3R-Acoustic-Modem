@@ -2,7 +2,7 @@
 
 **日本語** | [繁體中文（臺灣）](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [English](README.en.md)
 
-この `feature/bell103` ブランチは、M5Stack ATOM S3R と ATOMIC ECHO BASE（Atomic Voice Base）を使う音響モデムの開発版です。保存済みのBell 202 / AX.25（1200 bps）に、切替可能なBell 103（300 bps）を追加しています。PCまたはAndroidをUSB-CでATOMに接続し、ATOM間は空中の音で通信します。無線送信機は使用しません。AX.25のみの保存版は[mainブランチ](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/main)とタグ `v0.3.1` にあります。
+この `feature/ggwave` ブランチは、M5Stack ATOM S3R と ATOMIC ECHO BASE（Atomic Voice Base）を使う音響モデムの開発版です。保存済みのBell 202 / AX.25（1200 bps）、Bell 103（300 bps）に、切替可能なggwaveを追加しています。PCまたはAndroidをUSB-CでATOMに接続し、ATOM間は空中の音で通信します。無線送信機は使用しません。AX.25のみの保存版は[mainブランチ](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/main)とタグ `v0.3.1` にあります。
 
 10月5日からの作業と実機試験は [開発日記](docs/DEVELOPMENT_DIARY.md) に記録し、以後の作業も追記します。
 
@@ -83,4 +83,12 @@ PCの「ATOM Peer Chat」は [START_PC_PEER_CHAT.cmd](START_PC_PEER_CHAT.cmd) �
 
 ## ライセンス
 
-このリポジトリで作成したソースは [MIT License](LICENSE) です。第三者の依存物は各配布元のライセンスに従います。
+このリポジトリで作成したソースは [MIT License](LICENSE) です。第三者の依存物は各配布元のライセンスに従います。ggwave-arduino 0.1.10 は [公式ソース](https://github.com/ggerganov/ggwave-arduino) のコミット `2e13b3cf515166317a29bbb7643042ce78650e22` を [third_party/ggwave-arduino](third_party/ggwave-arduino) に同梱し、その [MITライセンス](third_party/ggwave-arduino/LICENSE) と内部の [Reed–Solomon MITライセンス](third_party/ggwave-arduino/src/ggwave/reed-solomon/LICENSE) を保持しています。
+
+## ggwave 開発モード（実機検証中）
+
+公式ggwaveの `DT_FASTEST`（可聴音、固定長16バイト）を独立した第三の通信モードとして追加しました。UTF-8で1通1〜16バイトを扱い、「こんにちは」（15バイト）、「你好」（6バイト）、「Hello」（5バイト）が収まります。長文分割、ACK、再送はまだありません。48 kHzのES8311 I2S PCMと、公式コーデックの24 kHz・512サンプルフレームとの間で2:1変換します。送信中は受信コーデックを停止し、終了後に受信待機へ戻します。音量・マイクゲインは従来と同じATOM保存値を使用します。Bell 103の接続音やAX.25との同時動作はしません。
+
+シリアルでは両ATOMに `ggwave on` を送り、片方から `ggwave send こんにちは`、次に逆方向へ `ggwave send 你好`、最後に `ggwave send Hello` を送ります。`GGWAVE RX TEXT:` の後に本文が出たら復号成功です。終了は両方で `ggwave off` です。PCにCOM5・COM6で2台接続している場合は [TEST_GGWAVE_AIR.cmd](TEST_GGWAVE_AIR.cmd) を使用できます。Androidアプリ0.4.0では「詳細」→「ggwaveを開始」で同じチャット欄を使い、「ggwaveを終了」でAX.25へ戻ります。ggwave中のIPトンネル、グループCHAT、Bell 103は無効です。
+
+PC上では公式ggwave 0.4.0の送受信で、上記3言語を24 kHz固定長DT信号として符号化・復号し、48 kHzへの変換を挟んでも往復することを確認しました。**ATOM実機のggwave送受信、Android↔ATOM、公式PC波形との実機相互通信、メモリ・CPU使用量、既存AX.25/Bell 103の回帰はまだ未検証です。** 実機の結果を得るまでは動作済みとみなしません。

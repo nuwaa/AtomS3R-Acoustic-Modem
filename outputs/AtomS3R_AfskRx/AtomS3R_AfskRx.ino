@@ -22,6 +22,7 @@
 #include "Bell103Fsk.h"
 #include "Bell103Session.h"
 #include "Bell103DataLink.h"
+#include "GgWaveMode.h"
 
 constexpr size_t SAMPLE_RATE = 48000;
 constexpr size_t SAMPLES = SAMPLE_RATE * 3;
@@ -62,6 +63,7 @@ Bell103FskTx bell103Tx;
 Bell103FskRx bell103Rx;
 Bell103Session bell103Session;
 Bell103DataLink bell103Data;
+GgWaveMode ggwaveMode;
 Bell103Role bell103SessionRole=Bell103Role::Originate;
 bool bell103Auto=false;
 bool bell103AutoFailureReported=false;
@@ -100,6 +102,10 @@ void bell103SessionCommand(const char* command);
 void bell103DataCommand(const char* command,size_t length);
 void bell103AutoCommand(const char* command);
 void serviceBell103Auto();
+bool startGgWave();
+void stopGgWave();
+void serviceGgWave();
+void sendGgWave(const uint8_t* text,size_t length);
 
 bool writeRegister(uint8_t address,uint8_t reg,uint8_t value) {
   Wire.beginTransmission(address);
@@ -1037,6 +1043,84 @@ void serviceLiveReceiver() {
   if(elapsed>liveMaxProcessUs)liveMaxProcessUs=elapsed; ++liveBlocks;
 }
 
+bool startGgWave() {
+  if(acousticMode==AcousticMode::GgWave){Serial.println("GGWAVE READY (already active).");return true;}
+  if(acousticMode!=AcousticMode::Ax25 || binaryHostMode() || monitorMode || reliableLink.busy()) {
+    Serial.println("ERROR: stop Bell 103/monitor/reliable TX and use normal USB mode first.");return false;
+  }
+  stopLiveReceiver(false);
+  groupRuntime.enable(false,millis());
+  prepareReceiver();
+  if(!ggwaveMode.beginRx()) {
+    Serial.println("ERROR: ggwave allocation/initialization failed; AX.25 restored.");
+    startLiveReceiver();return false;
+  }
+  acousticMode=AcousticMode::GgWave;
+  screenStatus("GGWAVE RX WAIT");
+  Serial.printf("GGWAVE READY protocol=DT_FASTEST payload_max=16 sample_rate=24000 i2s=48000 heap=%d\n",
+                ggwaveMode.heapBytes());
+  return true;
+}
+
+void stopGgWave() {
+  if(acousticMode!=AcousticMode::GgWave)return;
+  ggwaveMode.stop();
+  speakerEnable(false);
+  acousticMode=AcousticMode::Ax25;
+  startLiveReceiver();
+  Serial.println("GGWAVE STOPPED; ACOUSTIC MODE=ax25.");
+}
+
+void sendGgWave(const uint8_t* text,size_t length) {
+  if(acousticMode!=AcousticMode::GgWave){Serial.println("ERROR: use ggwave on first.");return;}
+  if(ggwaveMode.transmitting()){Serial.println("GGWAVE TX BUSY");return;}
+  if(!length||length>GgWaveMode::kPayloadBytes){Serial.println("GGWAVE TX FAILED: UTF-8 length must be 1..16 bytes.");return;}
+  if(!ggwaveMode.beginTx(text,length)) {
+    Serial.println("GGWAVE TX FAILED: invalid UTF-8 or codec allocation.");
+    if(!ggwaveMode.beginRx())stopGgWave();return;
+  }
+  if(!speakerEnable(true)) {
+    Serial.println("GGWAVE TX FAILED: speaker enable.");
+    ggwaveMode.stop();if(!ggwaveMode.beginRx())stopGgWave();return;
+  }
+  screenStatus("GGWAVE TX");
+  Serial.printf("GGWAVE TX START bytes=%u\n",(unsigned)length);
+}
+
+void serviceGgWave() {
+  if(acousticMode!=AcousticMode::GgWave)return;
+  if(ggwaveMode.transmitting()) {
+    int32_t stereo[256*2];
+    const size_t frames=ggwaveMode.renderTx48(stereo,256);
+    if(frames && !audioSink(stereo,frames,nullptr)) {
+      Serial.println("GGWAVE TX FAILED: I2S write.");
+      ggwaveMode.stop();speakerEnable(false);prepareReceiver();
+      if(!ggwaveMode.beginRx())stopGgWave();return;
+    }
+    if(ggwaveMode.txFinished()) {
+      int32_t silence[256*2]={};
+      audioSink(silence,256,nullptr);
+      speakerEnable(false);
+      prepareReceiver();
+      if(!ggwaveMode.beginRx()) {Serial.println("GGWAVE RX FAILED: allocation after TX.");stopGgWave();return;}
+      screenStatus("GGWAVE RX WAIT");
+      Serial.println("GGWAVE TX DONE; RX WAIT.");
+    }
+    return;
+  }
+  size_t received=0;
+  const esp_err_t err=i2s_channel_read(audio.rxChan(),liveBlock,sizeof(liveBlock),&received,10);
+  if(err==ESP_ERR_TIMEOUT||received==0)return;
+  if(err!=ESP_OK){Serial.println("GGWAVE RX FAILED: I2S read.");stopGgWave();return;}
+  uint8_t text[GgWaveMode::kPayloadBytes];
+  const int length=ggwaveMode.feedRx48(liveBlock,received/(2*sizeof(int32_t)),text,sizeof(text));
+  if(length>0){
+    screenStatus("GGWAVE RX OK");screenText(text,length);
+    Serial.print("GGWAVE RX TEXT: ");Serial.write(text,length);Serial.println();
+  } else if(length==-2)Serial.println("GGWAVE RX FAILED: invalid UTF-8/padding.");
+  else if(length==-1)Serial.println("GGWAVE RX FAILED: decoder input.");
+}
+
 void loop() {
   if(pppMode){
     while(Serial.available())pppTransport.acceptByte((uint8_t)Serial.read());
@@ -1046,7 +1130,11 @@ void loop() {
     while(Serial.available())slipTransport.acceptByte((uint8_t)Serial.read());
     serviceLiveReceiver();reliableLink.service();return;
   }
-  if (!Serial.available()) { if(acousticMode==AcousticMode::Bell103){serviceBell103Auto();return;} serviceLiveReceiver(); if(!monitorMode){reliableLink.service();if(!reliableLink.busy())groupRuntime.service(millis());} return; }
+  if (!Serial.available()) {
+    if(acousticMode==AcousticMode::Bell103){serviceBell103Auto();return;}
+    if(acousticMode==AcousticMode::GgWave){serviceGgWave();return;}
+    serviceLiveReceiver(); if(!monitorMode){reliableLink.service();if(!reliableLink.busy())groupRuntime.service(millis());} return;
+  }
   char c=Serial.read();
   if (acousticMode==AcousticMode::Ax25 && !commandLength && (c=='q'||c=='Q')) { stopLiveReceiver(); return; }
   if (acousticMode==AcousticMode::Ax25 && !commandLength && (c=='l'||c=='L')) { startLiveReceiver(); return; }
@@ -1057,7 +1145,7 @@ void loop() {
     bool resume=liveRx; stopLiveReceiver(false); dumpRecording(); if(resume)startLiveReceiver(); return;
   }
   if (!commandLength && c=='?') {
-    Serial.println("Commands: t <ASCII>; g <UTF-8>; k <UTF8-HEX>; group on|off|show; monitor on|off|show; acoustic show|ax25|bell103; bell103 tone|selftest|session selftest|session caller|answerer|tx|rx|show|stop|rx originate|rx answer|tx originate <text>|tx answer <text>; z <HEX>; y <HEX>; mode ppp; slip on; boot show|normal|slip|ppp|reset; u <HEX>; x <PIDHEX> <HEX>; c <SRC> <DEST>; l=RX; q=stop; r=batch; p=PCM."); return;
+    Serial.println("Commands: t <ASCII>; g <UTF-8>; k <UTF8-HEX>; group on|off|show; monitor on|off|show; acoustic show|ax25|ggwave; ggwave on|off|show|send <UTF-8 (1..16 bytes)>; audio show|volume <0..100>|gain <0,6,..42>; bell103 tone|selftest|session selftest|session caller|answerer|tx|rx|show|stop|rx originate|rx answer|tx originate <text>|tx answer <text>; z <HEX>; y <HEX>; mode ppp; slip on; boot show|normal|slip|ppp|reset; u <HEX>; x <PIDHEX> <HEX>; c <SRC> <DEST>; l=RX; q=stop; r=batch; p=PCM."); return;
   }
   if (c=='\r') return;
   if (c=='\n') {
@@ -1077,9 +1165,20 @@ void loop() {
     else if(!strncmp(commandLine,"audio ",6)){
       audioSettingsCommand(commandLine);
     }
+    else if(!strcmp(commandLine,"ggwave on"))startGgWave();
+    else if(!strcmp(commandLine,"ggwave off"))stopGgWave();
+    else if(!strcmp(commandLine,"ggwave show"))
+      Serial.printf("GGWAVE MODE=%s state=%s payload_max=16 protocol=DT_FASTEST\n",
+                    acousticMode==AcousticMode::GgWave?"on":"off",acousticMode!=AcousticMode::GgWave?"off":ggwaveMode.transmitting()?"tx":"rx_wait");
+    else if(!strncmp(commandLine,"ggwave send ",12))
+      sendGgWave((const uint8_t*)commandLine+12,commandLength-12);
     else if(acousticMode==AcousticMode::Bell103 && strcmp(commandLine,"acoustic show") &&
             strcmp(commandLine,"acoustic ax25")){
       Serial.println("ERROR: Bell 103 session active; use bell103 session stop first.");
+    }
+    else if(acousticMode==AcousticMode::GgWave && strcmp(commandLine,"acoustic show") &&
+            strcmp(commandLine,"acoustic ax25")){
+      Serial.println("ERROR: ggwave active; use ggwave off first.");
     }
     else if (commandLength>=3 && (commandLine[0]=='t'||commandLine[0]=='T') && commandLine[1]==' ') {
       bool resume=liveRx; stopLiveReceiver(false); Serial.println("STATE RX -> TX");
@@ -1128,7 +1227,9 @@ void loop() {
     }
     else if(!strcmp(commandLine,"acoustic show")) {
       if(acousticMode==AcousticMode::Ax25)Serial.println("ACOUSTIC MODE=ax25 READY=ax25");
-      else Serial.printf("ACOUSTIC MODE=bell103 state=%s\n",bell103SessionStateName(bell103Session.state()));
+      else if(acousticMode==AcousticMode::Bell103)Serial.printf("ACOUSTIC MODE=bell103 state=%s\n",bell103SessionStateName(bell103Session.state()));
+      else Serial.println("ACOUSTIC MODE=ggwave READY=rx_wait");
+      else Serial.printf("ACOUSTIC MODE=ggwave state=%s\n",ggwaveMode.transmitting()?"tx":"rx_wait");
     }
     else if(!strcmp(commandLine,"bell103 tone")) {
       playBell103Overture();
@@ -1153,8 +1254,10 @@ void loop() {
     }
     else if(!strncmp(commandLine,"acoustic ",9)) {
       AcousticMode requested;
-      if(!parseAcousticMode(commandLine+9,requested)) Serial.println("ERROR: use acoustic show|ax25|bell103.");
+      if(!parseAcousticMode(commandLine+9,requested)) Serial.println("ERROR: use acoustic show|ax25|ggwave.");
       else if(requested==AcousticMode::Bell103) Serial.println("ERROR: Bell 103 is not ready in this build; AX.25 remains active.");
+      else if(requested==AcousticMode::GgWave)startGgWave();
+      else if(acousticMode==AcousticMode::GgWave)stopGgWave();
       else if(acousticMode==AcousticMode::Bell103)bell103SessionCommand("bell103 session stop");
       else Serial.println("ACOUSTIC MODE=ax25 (unchanged).");
     }

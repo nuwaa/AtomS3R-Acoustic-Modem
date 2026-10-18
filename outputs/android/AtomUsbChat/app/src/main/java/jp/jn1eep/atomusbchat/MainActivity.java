@@ -61,6 +61,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
     private Button bellCallerButton;
     private Button bellAnswerButton;
     private Button bellStopButton;
+    private Button ggButton;
     private int speakerVolume = 50;
     private int microphoneGainDb = 6;
     private int audioProfile = 1;
@@ -73,6 +74,10 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
     private boolean bellActive = false;
     private boolean bellConnected = false;
     private boolean bellPending = false;
+    private boolean ggActive = false;
+    private boolean ggReady = false;
+    private boolean ggSending = false;
+    private String ggState = "受信待機";
     private boolean groupMode = false;
     private boolean monitorMode = false;
     private boolean monitorConfirmed = false;
@@ -97,7 +102,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
                     usb.request(device);
                 }
             }
-            if (usb.isConnected() && !bellActive && SystemClock.elapsedRealtime()-lastInboxPullMs>=5000) {
+            if (usb.isConnected() && !bellActive && !ggActive && SystemClock.elapsedRealtime()-lastInboxPullMs>=5000) {
                 lastInboxPullMs=SystemClock.elapsedRealtime();
                 usb.requestInbox();
             }
@@ -221,6 +226,9 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         bellActions.addView(bellAnswerButton, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         bellActions.addView(bellStopButton, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         details.addView(bellActions);
+        ggButton = smallButton("ggwaveを開始");
+        ggButton.setOnClickListener(v -> { if (ggActive) stopGgWave(); else startGgWave(); });
+        details.addView(ggButton);
         Button audioSettings = smallButton("音響設定  ▸");
         audioSettings.setOnClickListener(v -> showAudioSettings());
         details.addView(audioSettings);
@@ -507,6 +515,16 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
                 message.setText("");
                 return;
             }
+            if (ggActive) {
+                if (!ggReady || ggSending) { onStatus("ggwaveは受信準備中または送信中です"); return; }
+                usb.sendGgWave(text);
+                ggSending = true;
+                ggState = "送信中";
+                refreshMonitorUi();
+                addBubble("自分 (ggwave)", text, true);
+                message.setText("");
+                return;
+            }
             if (text.equals("/rx-off") || text.equals("/rx-on")) {
                 boolean enabled = text.equals("/rx-on");
                 usb.setAcousticReceiverEnabled(enabled);
@@ -524,6 +542,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
     }
 
     private void startBell103(boolean caller) {
+        if (ggActive) { onStatus("ggwaveを終了してからBell 103を開始してください"); return; }
         if (monitorMode) { onStatus("モニターを終了してからBell 103を開始してください"); return; }
         if (usb.hasDirectPending()) { onStatus("直接チャットの送達待ちが終わってから切り替えてください"); return; }
         try {
@@ -553,6 +572,33 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         } catch (Exception error) { onStatus(error.getMessage()); }
     }
 
+    private void startGgWave() {
+        if (bellActive || monitorMode || usb.hasDirectPending()) {
+            onStatus("Bell 103・モニター・直接チャット送達待ちを終了してからggwaveを開始してください"); return;
+        }
+        try {
+            vpnRequested = false;
+            AtomVpnService.attachUsb(null);
+            stopService(new Intent(this, AtomVpnService.class));
+            usb.startGgWave();
+            ggActive = true; ggReady = false; ggSending = false; ggState = "初期化中";
+            groupMode = false;
+            getPreferences(MODE_PRIVATE).edit().putBoolean("groupMode", false).apply();
+            modeButton.setText("通信: 直接");
+            refreshMonitorUi();
+            addNotice("ggwave DT Fastestを開始。短文はUTF-8で最大16バイト、ACK・再送なし");
+        } catch (RuntimeException error) { onStatus(error.getMessage()); }
+    }
+
+    private void stopGgWave() {
+        try {
+            usb.stopGgWave();
+            ggActive = false; ggReady = false; ggSending = false;
+            refreshMonitorUi();
+            addNotice("ggwave終了。AX.25に戻りました");
+        } catch (RuntimeException error) { onStatus(error.getMessage()); }
+    }
+
     private void connectUsb() {
         UsbDevice device = usb.find();
         if (device == null) { onStatus(usb.describeDevices()); return; }
@@ -562,6 +608,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
     }
 
     private void startVpn() {
+        if (ggActive) { onStatus("ggwaveを終了してからIPトンネルを開始してください"); return; }
         if (bellActive) { onStatus("Bell 103を切断してからIPトンネルを開始してください"); return; }
         if (monitorMode) { onStatus("モニター中はIPトンネルを開始できません"); return; }
         Intent permission = android.net.VpnService.prepare(this);
@@ -705,6 +752,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         diagnosticLog.setText(next);
     }); }
     private void setMonitorMode(boolean enabled) {
+        if (ggActive) { onStatus("ggwaveを終了してからモニターに切り替えてください"); return; }
         if (bellActive) { onStatus("Bell 103を切断してからモニターに切り替えてください"); return; }
         try {
             if (enabled) {
@@ -722,17 +770,19 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         } catch (Exception error) { onStatus(error.getMessage()); }
     }
     private void refreshMonitorUi() {
-        modeLabel.setText(bellActive ? (bellConnected ? "Bell 103 · 接続済み" : "Bell 103 · 接続中") : monitorMode ? (monitorConfirmed ? "受信専用モニター · " + monitorPacketCount + " packets" : "モニター確認待ち") :
+        modeLabel.setText(ggActive ? "ggwave · " + ggState : bellActive ? (bellConnected ? "Bell 103 · 接続済み" : "Bell 103 · 接続中") : monitorMode ? (monitorConfirmed ? "受信専用モニター · " + monitorPacketCount + " packets" : "モニター確認待ち") :
                 groupMode ? "グループ CHAT" : "直接チャット");
-        modeButton.setEnabled(!monitorMode && !bellActive);
-        vpnButton.setEnabled(!monitorMode && !bellActive);
+        modeButton.setEnabled(!monitorMode && !bellActive && !ggActive);
+        vpnButton.setEnabled(!monitorMode && !bellActive && !ggActive);
         message.setEnabled(!monitorMode);
-        sendButton.setEnabled(!monitorMode && (!bellActive || bellConnected));
-        command.setEnabled(!monitorMode && !bellActive);
-        bellCallerButton.setEnabled(!monitorMode && !bellActive);
-        bellAnswerButton.setEnabled(!monitorMode && !bellActive);
+        sendButton.setEnabled(!monitorMode && (!bellActive || bellConnected) && (!ggActive || ggReady && !ggSending));
+        command.setEnabled(!monitorMode && !bellActive && !ggActive);
+        bellCallerButton.setEnabled(!monitorMode && !bellActive && !ggActive);
+        bellAnswerButton.setEnabled(!monitorMode && !bellActive && !ggActive);
         bellStopButton.setEnabled(bellActive);
-        monitorButton.setEnabled(!bellActive);
+        ggButton.setEnabled(!bellActive && !monitorMode);
+        ggButton.setText(ggActive ? "ggwaveを終了" : "ggwaveを開始");
+        monitorButton.setEnabled(!bellActive && !ggActive);
         monitorButton.setText(monitorMode ? "モニターを終了" : "受信専用モニター開始");
         conversationScroll.removeAllViews();
         conversationScroll.addView(monitorMode ? monitorLog : conversation);
@@ -754,7 +804,14 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         } else if (text.startsWith("ERROR: audio ")) {
             if (activeAudioFeedback != null) activeAudioFeedback.setText(text);
         }
-        if (text.startsWith("USB-C接続済み")) {monitorConfirmed = false;bellActive = false;bellConnected = false;bellPending = false;refreshMonitorUi();shown = "ATOM接続済み";}
+        if (text.startsWith("USB-C接続済み")) {monitorConfirmed = false;bellActive = false;bellConnected = false;bellPending = false;ggActive=false;ggReady=false;ggSending=false;refreshMonitorUi();shown = "ATOM接続済み";}
+        else if (text.startsWith("ERROR: ggwave")) {ggActive=false;ggReady=false;ggSending=false;refreshMonitorUi();shown="ggwave開始失敗";}
+        else if (text.startsWith("GGWAVE READY")) {ggActive=true;ggReady=true;ggSending=false;ggState="受信待機";refreshMonitorUi();shown="ggwave受信待機";}
+        else if (text.startsWith("GGWAVE TX START")) {ggSending=true;ggState="送信中";refreshMonitorUi();shown="ggwave送信中";}
+        else if (text.startsWith("GGWAVE TX DONE")) {ggSending=false;ggState="受信待機";refreshMonitorUi();shown="ggwave送信完了・受信待機";}
+        else if (text.startsWith("GGWAVE TX FAILED")) {ggSending=false;ggState="送信失敗";refreshMonitorUi();shown="ggwave送信失敗";}
+        else if (text.startsWith("GGWAVE RX FAILED")) {ggState="受信失敗";refreshMonitorUi();shown="ggwave受信失敗";}
+        else if (text.startsWith("GGWAVE STOPPED")) {ggActive=false;ggReady=false;ggSending=false;refreshMonitorUi();shown="AX.25に復帰";}
         else if (text.startsWith("BELL103 AUTO RX CONTROL") && text.contains("state=connected")) {bellConnected = true;refreshMonitorUi();shown = "Bell 103接続済み";}
         else if (text.startsWith("BELL103 SESSION STOP") || text.startsWith("BELL103 AUTO CONNECT TIMEOUT")) {bellActive = false;bellConnected = false;bellPending = false;refreshMonitorUi();shown = "Bell 103切断";}
         else if (text.startsWith("BELL103 AUTO ACK OK")) {bellPending = false;shown = "Bell 103送達確認";}
@@ -764,7 +821,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         else if (text.startsWith("AX25 DIRECT USB_DISCONNECTED")) {shown = "USB切断・直接チャットは未送信";addNotice(shown);}
         else if (text.startsWith("STATE RX LISTEN")) shown = "ATOM接続済み・受信中";
         else if (text.startsWith("LIVE RX stopped")) shown = "受信停止中";
-        else if (text.equals("USB切断")) {bellActive = false;bellConnected = false;bellPending = false;refreshMonitorUi();shown = "ATOM未接続";}
+        else if (text.equals("USB切断")) {bellActive = false;bellConnected = false;bellPending = false;ggActive=false;ggReady=false;ggSending=false;refreshMonitorUi();shown = "ATOM未接続";}
         else if (text.startsWith("MONITOR MODE=on")) {
             monitorConfirmed = true;
             shown = "ATOM接続済み・受信専用";
@@ -786,7 +843,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         if(text.startsWith("USB-C接続済み"))status.postDelayed(() -> {
             try {
                 if (monitorMode) {usb.setGroupMode(false);usb.setMonitorMode(true);}
-                else if (!bellActive) usb.setGroupMode(groupMode);
+                else if (!bellActive && !ggActive) usb.setGroupMode(groupMode);
                 usb.requestAudioSettings();
                 if (vpnRequested && !monitorMode) {
                     AtomVpnService.attachUsb(usb::sendIpv4);
@@ -798,6 +855,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
     @Override public void onMessage(String source, String destination, String text) { addBubble(source, text, false); }
     @Override public void onGroupMessage(String source, String text) { addBubble(source, text, false); }
     @Override public void onBell103Message(String text) { addBubble("Bell 103", text, false); }
+    @Override public void onGgWaveMessage(String text) { runOnUiThread(() -> {ggState="受信成功";refreshMonitorUi();status.setText("ggwave受信成功");addBubble("ggwave",text,false);}); }
     @Override public void onMonitorPacket(String source,String destination,int control,int pid,byte[] payload) {
         if (!monitorMode || !monitorConfirmed) return;
         runOnUiThread(() -> {

@@ -19,7 +19,8 @@ out.mkdir(parents=True,exist_ok=True)
 sketch = root/'AtomS3R_AfskRx'
 library = Path(config['echo_library'])
 gfx = Path(config['gfx_library'])
-includes = [sketch,core/'cores/esp32',core/'variants/esp32s3',library]
+ggwave = root.parent/'third_party/ggwave-arduino/src'
+includes = [sketch,core/'cores/esp32',core/'variants/esp32s3',library,ggwave]
 for lib in ['Wire','ESP_I2S','FS','SPI','Preferences']:
     includes.append(core/'libraries'/lib/'src')
 includes.append(gfx)
@@ -35,7 +36,8 @@ common = ['-MMD','-mdynconfig=xtensa_esp32s3.so','-c','-Os','-Werror=return-type
 common += ['-I'+str(p) for p in includes]
 sources = [sketch/'AtomS3R_AfskRx.ino']
 sources += sorted(sketch.glob('*.cpp'))
-for folder in [core/'cores/esp32',library]+includes[4:]:
+sources += sorted((ggwave/'ggwave').glob('*.cpp'))
+for folder in [core/'cores/esp32',library]+includes[5:]:
     sources += [p for p in folder.rglob('*') if p.suffix in ('.cpp','.c','.S')]
 
 # Header edits must invalidate object files as well as .ino edits.
