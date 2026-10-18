@@ -47,9 +47,17 @@ PC 側は ATOM の USB CDC シリアルポートを使用します。まずシ�
 
 音響経路は半二重で、音量・配置・周囲雑音によって成功率と遅延が変わります。PC 診断ツールやテスト用ソースは `outputs/` に保存しています。録音、ログ、端末 Flash バックアップ、APK、ローカル設定は公開対象から除外しています。
 
-## 今後
+## 開発ブランチと日記
 
-Bell 103方式の300 bps音響モデムは、[feature/bell103ブランチ](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/feature/bell103)で公開しています。この`main`保存版には含まれません。接続音、半二重チャット、ACK・再送の開発状況と実機試験結果は、ブランチのREADMEと[開発日記](docs/DEVELOPMENT_DIARY.md)をご覧ください。
+この `main` は1200 bps AX.25 / Bell 202の保存版です。以下の追加方式は、それぞれの開発ブランチで試しています。ブランチの日記には、実機で確認した結果と未検証の項目を分けて記録しています。
+
+| ブランチ | 内容 | 日記 |
+| --- | --- | --- |
+| `main` | AX.25、USBチャット、グループチャット、IPトンネルの初期開発（10月5日ごろ～） | [AX.25から始まる開発日記](docs/DEVELOPMENT_DIARY.md) |
+| [`feature/bell103`](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/feature/bell103) | ダイヤルアップ風接続音と300 bps Bell 103を追加。接続、本文・ACK、再送、画面ロック中の受信、遅延試験を記録 | [Bell 103ブランチの日記](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/blob/feature/bell103/docs/DEVELOPMENT_DIARY.md) |
+| [`feature/ggwave`](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/feature/ggwave) | ggwave短文・280文字の分割通信、音量調整、klesis Web音声の受信を追加。2台のATOMとOPPOでの試験を記録 | [ggwaveブランチの日記（10月18日まで）](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/blob/feature/ggwave/docs/DEVELOPMENT_DIARY.md) |
+
+Bell 103とggwaveは、この `main` のファームウェアには含まれません。使う場合は対応するブランチのREADME、ビルド手順、実機試験の記録を確認してください。
 
 ## ライセンス
 

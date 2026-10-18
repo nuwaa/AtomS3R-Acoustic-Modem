@@ -2,7 +2,7 @@
 
 [日本語](README.md) | **繁體中文（臺灣）** | [简体中文](README.zh-CN.md) | [English](README.en.md)
 
-這是使用 M5Stack ATOM S3R 與 ATOMIC ECHO BASE（Atomic Voice Base）的音響 AX.25 數據機原始碼保存版。電腦或 Android 裝置透過 USB-C 連接 ATOM；兩台 ATOM 則以空氣中的 1200 bps Bell 202 AFSK 傳輸資料，不使用無線電發射機。本頁說明 `main` 分支的保存版；Bell 103 功能另於 `feature/bell103` 分支開發。
+這是使用 M5Stack ATOM S3R 與 ATOMIC ECHO BASE（Atomic Voice Base）的音響 AX.25 數據機原始碼保存版。電腦或 Android 裝置透過 USB-C 連接 ATOM；兩台 ATOM 則以空氣中的 1200 bps Bell 202 AFSK 傳輸資料，不使用無線電發射機。本頁說明 `main` 分支的保存版；Bell 103 與 ggwave 另於開發分支實作。
 
 10 月 5 日起的開發過程與實機測試記錄在[開發日誌](docs/DEVELOPMENT_DIARY.zh-TW.md)，後續也會持續補充。
 
@@ -47,9 +47,17 @@
 
 音響鏈路為半雙工；音量、裝置位置與環境雜音會影響成功率及延遲。電腦診斷工具與測試原始碼位於 `outputs/`。錄音、日誌、裝置 Flash 備份、APK 及本機設定不列入公開內容。
 
-## 後續規劃
+## 開發分支與日誌
 
-可切換的 300 bps Bell 103 音響模式已公開於 [feature/bell103 分支](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/feature/bell103)。**此 `main` 保存版尚未包含該功能**。分支 README 與[開發日誌](docs/DEVELOPMENT_DIARY.zh-TW.md)記錄連線音、半雙工聊天、ACK／重傳及實機測試結果。
+此 `main` 分支保留 1200 bps AX.25 / Bell 202 版本。其他音響通訊模式在各自的開發分支測試；日誌會區分實機驗證結果與尚未驗證的項目。
+
+| 分支 | 日誌內容 | 日誌 |
+| --- | --- | --- |
+| `main` | AX.25、USB 聊天、群組聊天與 IP 通道的初期開發（約自 10 月 5 日起） | [AX.25 開發日誌](docs/DEVELOPMENT_DIARY.zh-TW.md) |
+| [`feature/bell103`](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/feature/bell103) | 撥接風格連線音、300 bps Bell 103、連線、文字與 ACK、重傳、Android 鎖定期間的接收及延遲測試 | [Bell 103 分支日誌](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/blob/feature/bell103/docs/DEVELOPMENT_DIARY.zh-TW.md) |
+| [`feature/ggwave`](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/feature/ggwave) | ggwave 短文與 280 字分片傳送、音量設定、klesis 網頁音訊接收，以及兩台 ATOM 與 OPPO 的測試 | [ggwave 分支日誌（截至 10 月 18 日）](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/blob/feature/ggwave/docs/DEVELOPMENT_DIARY.zh-TW.md) |
+
+Bell 103 與 ggwave **不包含在此 `main` 韌體中**。使用前請查看對應分支的 README、建置步驟與實機測試紀錄。
 
 ## 授權
 

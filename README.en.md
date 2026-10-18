@@ -2,7 +2,7 @@
 
 [日本語](README.md) | [繁體中文（臺灣）](README.zh-TW.md) | [简体中文](README.zh-CN.md) | **English**
 
-This is a snapshot of the working acoustic AX.25 modem source for the M5Stack ATOM S3R and ATOMIC ECHO BASE (Atomic Voice Base). A PC or Android device connects to an ATOM over USB-C; two ATOM units communicate through the air using 1200 bps Bell 202 AFSK. No radio transmitter is used. This page describes the `main` snapshot. Bell 103 work is being developed separately on `feature/bell103`.
+This is a snapshot of the working acoustic AX.25 modem source for the M5Stack ATOM S3R and ATOMIC ECHO BASE (Atomic Voice Base). A PC or Android device connects to an ATOM over USB-C; two ATOM units communicate through the air using 1200 bps Bell 202 AFSK. No radio transmitter is used. This page describes the `main` snapshot; Bell 103 and ggwave are developed on separate branches.
 
 Work and hardware tests since October 5 are recorded in the [development diary](docs/DEVELOPMENT_DIARY.en.md), which will be extended as development continues.
 
@@ -47,9 +47,17 @@ On a PC, use the ATOM's USB CDC serial port. A serial monitor at **115200 bps** 
 
 The acoustic path is half-duplex. Volume, placement, and ambient noise affect delivery rate and latency. PC diagnostic tools and test sources are in `outputs/`. Recordings, logs, device flash backups, APKs, and local settings are excluded from publication.
 
-## Planned work
+## Development branches and diaries
 
-The switchable 300 bps Bell 103 mode is published on the [feature/bell103 branch](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/feature/bell103). It is **not included in this `main` snapshot**. The branch README and [development diary](docs/DEVELOPMENT_DIARY.en.md) describe the connection sound, half-duplex chat, ACK/retry behavior, and hardware test results.
+This `main` branch preserves the 1200 bps AX.25 / Bell 202 version. The additional acoustic modes are being tested on separate branches. Their diaries distinguish hardware results from work that has not yet been verified.
+
+| Branch | What the diary covers | Diary |
+| --- | --- | --- |
+| `main` | Early AX.25, USB chat, group chat, and IP tunnel development (from about October 5) | [AX.25 development diary](docs/DEVELOPMENT_DIARY.en.md) |
+| [`feature/bell103`](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/feature/bell103) | Dial-up-style overture, 300 bps Bell 103, connection, text/ACK, retries, reception while Android is locked, and latency tests | [Bell 103 branch diary](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/blob/feature/bell103/docs/DEVELOPMENT_DIARY.en.md) |
+| [`feature/ggwave`](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/feature/ggwave) | Short and fragmented 280-character ggwave messages, audio level controls, klesis Web audio reception, and two-ATOM/OPPO tests | [ggwave branch diary (through October 18)](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/blob/feature/ggwave/docs/DEVELOPMENT_DIARY.en.md) |
+
+Bell 103 and ggwave are **not included in the `main` firmware**. Consult the relevant branch README, build instructions, and hardware test record before using either mode.
 
 ## License
 
