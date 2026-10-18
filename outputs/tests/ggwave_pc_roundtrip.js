@@ -30,15 +30,18 @@ factory().then(ggwave => {
   const rx = ggwave.init(parameters);
   for (const message of ['こんにちは', '你好', 'Hello']) {
     assert.ok(Buffer.byteLength(message, 'utf8') <= 16);
-    const waveform = ggwave.encode(tx, message, ggwave.ProtocolId.GGWAVE_PROTOCOL_DT_FASTEST, 10);
+    const waveform = ggwave.encode(tx, message, ggwave.ProtocolId.GGWAVE_PROTOCOL_DT_FASTEST, 60);
     assert.ok(waveform.length > 0);
+    const samples = new Int16Array(waveform.buffer, waveform.byteOffset, waveform.byteLength / 2);
+    const peak = samples.reduce((highest, sample) => Math.max(highest, Math.abs(sample)), 0);
+    assert.ok(peak < 32760, `${message}: output clips at ${peak}`);
     const decoded = ggwave.decode(rx, through48k(waveform));
     assert.ok(decoded, `${message}: no payload decoded`);
     const bytes = Buffer.from(decoded).subarray(0, 16);
     const ending = bytes.indexOf(0);
     const text = bytes.subarray(0, ending < 0 ? 16 : ending).toString('utf8');
     assert.equal(text, message);
-    console.log(`PASS ${message}: ${waveform.length} waveform bytes at 24 kHz`);
+    console.log(`PASS ${message}: ${waveform.length} waveform bytes at 24 kHz, peak=${peak}`);
   }
   ggwave.free(tx);
   ggwave.free(rx);

@@ -47,7 +47,7 @@ bool GgWaveMode::beginTx(const uint8_t* utf8, size_t length) {
   modem_ = new (std::nothrow) GGWave();
   if (!modem_ || !modem_->prepare(parameters(GGWAVE_OPERATING_MODE_TX)) ||
       !modem_->init(static_cast<int>(length), reinterpret_cast<const char*>(utf8),
-                    GGWAVE_PROTOCOL_DT_FASTEST, 10)) {
+                    GGWAVE_PROTOCOL_DT_FASTEST, 60)) {
     stop();
     return false;
   }

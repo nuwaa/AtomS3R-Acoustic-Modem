@@ -54,6 +54,11 @@ def main():
             print("TEST PASS: ggwave UTF-8 air link in both directions")
         finally:
             for port in (a, b):
+                try:
+                    command(port, "ggwave show")
+                    wait_for(port, "GGWAVE MODE=", 3)
+                except (serial.SerialException, RuntimeError, TimeoutError):
+                    pass
                 command(port, "ggwave off")
 
 

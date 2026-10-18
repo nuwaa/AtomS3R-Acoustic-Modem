@@ -91,4 +91,4 @@ PCの「ATOM Peer Chat」は [START_PC_PEER_CHAT.cmd](START_PC_PEER_CHAT.cmd) �
 
 シリアルでは両ATOMに `ggwave on` を送り、片方から `ggwave send こんにちは`、次に逆方向へ `ggwave send 你好`、最後に `ggwave send Hello` を送ります。`GGWAVE RX TEXT:` の後に本文が出たら復号成功です。`ggwave show` はコーデック確保量、内蔵RAM・PSRAMの空き、受信処理の最長実行時間を表示します。終了は両方で `ggwave off` です。PCにCOM5・COM6で2台接続している場合は [TEST_GGWAVE_AIR.cmd](TEST_GGWAVE_AIR.cmd) を使用できます。Androidアプリ0.4.0では「詳細」→「ggwaveを開始」で同じチャット欄を使い、「ggwaveを終了」でAX.25へ戻ります。ggwave中のIPトンネル、グループCHAT、Bell 103は無効です。
 
-PC上では公式ggwave 0.4.0の送受信で、上記3言語を24 kHz固定長DT信号として符号化・復号し、48 kHzへの変換を挟んでも往復することを確認しました。**ATOM実機のggwave送受信、Android↔ATOM、公式PC波形との実機相互通信、メモリ・CPU使用量、既存AX.25/Bell 103の回帰はまだ未検証です。** 実機の結果を得るまでは動作済みとみなしません。
+PC上では公式ggwave 0.4.0の送受信で、上記3言語を24 kHz固定長DT信号として符号化・復号し、48 kHzへの変換を挟んでも往復することを確認しました。最初のATOM空中試験では10%の送信波形が小さすぎ、受信側は復号できませんでした。波形振幅を60%に上げたPC試験ではピーク19660/32767でクリップせず3言語とも復号できています。**60%版のATOM実機送受信、Android↔ATOM、公式PC波形との実機相互通信、CPU使用量、既存AX.25/Bell 103の回帰はまだ未検証です。** 実機の結果を得るまでは動作済みとみなしません。
