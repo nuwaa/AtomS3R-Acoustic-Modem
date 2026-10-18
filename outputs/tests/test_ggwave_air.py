@@ -45,6 +45,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("port_a", nargs="?", default="COM5")
     parser.add_argument("port_b", nargs="?", default="COM6")
+    parser.add_argument("--long", action="store_true", help="also send a 280-character Japanese message")
     args = parser.parse_args()
     with serial.Serial(args.port_a, 115200, timeout=0.15, write_timeout=2) as a, \
             serial.Serial(args.port_b, 115200, timeout=0.15, write_timeout=2) as b:
@@ -60,10 +61,19 @@ def main():
                 source.reset_input_buffer()
                 target.reset_input_buffer()
                 command(source, "ggwave send " + message)
-                wait_for(source, "GGWAVE TX DONE", 15)
+                wait_for(source, "GGWAVE MESSAGE SENT", 90)
                 marker = "GGWAVE RX TEXT: " + message
-                wait_for(target, marker, 15)
+                wait_for(target, marker, 5)
                 assert_no_repeat(target, marker)
+            if args.long:
+                message = "こんにちは你好" * 40  # exactly 280 Unicode characters / 840 UTF-8 bytes
+                a.reset_input_buffer()
+                b.reset_input_buffer()
+                command(a, "ggwave send " + message)
+                wait_for(a, "GGWAVE MESSAGE SENT", 300)
+                marker = "GGWAVE RX TEXT: " + message
+                wait_for(b, marker, 5)
+                assert_no_repeat(b, marker)
             print("TEST PASS: ggwave UTF-8 air link in both directions")
         finally:
             for port in (a, b):

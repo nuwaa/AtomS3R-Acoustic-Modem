@@ -19,7 +19,7 @@ function through48k(pcm24) {
 
 factory().then(ggwave => {
   const parameters = ggwave.getDefaultParameters();
-  parameters.payloadLength = 16;
+  parameters.payloadLength = 64;
   parameters.sampleRateInp = 24000;
   parameters.sampleRateOut = 24000;
   parameters.sampleRate = 24000;
@@ -28,8 +28,8 @@ factory().then(ggwave => {
   parameters.sampleFormatOut = ggwave.SampleFormat.GGWAVE_SAMPLE_FORMAT_I16;
   const tx = ggwave.init(parameters);
   const rx = ggwave.init(parameters);
-  for (const message of ['こんにちは', '你好', 'Hello']) {
-    assert.ok(Buffer.byteLength(message, 'utf8') <= 16);
+  for (const message of ['こんにちは', '你好', 'Hello', 'あ'.repeat(18)]) {
+    assert.ok(Buffer.byteLength(message, 'utf8') <= 64);
     const waveform = ggwave.encode(tx, message, ggwave.ProtocolId.GGWAVE_PROTOCOL_DT_FASTEST, 60);
     assert.ok(waveform.length > 0);
     const samples = new Int16Array(waveform.buffer, waveform.byteOffset, waveform.byteLength / 2);
@@ -37,9 +37,9 @@ factory().then(ggwave => {
     assert.ok(peak < 32760, `${message}: output clips at ${peak}`);
     const decoded = ggwave.decode(rx, through48k(waveform));
     assert.ok(decoded, `${message}: no payload decoded`);
-    const bytes = Buffer.from(decoded).subarray(0, 16);
+    const bytes = Buffer.from(decoded).subarray(0, 64);
     const ending = bytes.indexOf(0);
-    const text = bytes.subarray(0, ending < 0 ? 16 : ending).toString('utf8');
+    const text = bytes.subarray(0, ending < 0 ? 64 : ending).toString('utf8');
     assert.equal(text, message);
     console.log(`PASS ${message}: ${waveform.length} waveform bytes at 24 kHz, peak=${peak}`);
   }

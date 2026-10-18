@@ -23,6 +23,7 @@
 #include "Bell103Session.h"
 #include "Bell103DataLink.h"
 #include "GgWaveMode.h"
+#include "GgWaveChatLink.h"
 
 constexpr size_t SAMPLE_RATE = 48000;
 constexpr size_t SAMPLES = SAMPLE_RATE * 3;
@@ -30,6 +31,7 @@ I2SClass audio;
 es8311_handle_t codec = nullptr;
 uint8_t speakerVolume=50;
 uint8_t microphoneGainDb=6;
+uint8_t ggwaveLevel=80;
 int16_t* pcm = nullptr; // interleaved I2S slots, NOT 96000 Hz mono
 float* discriminator = nullptr;
 AfskDecoder decoder;
@@ -64,11 +66,9 @@ Bell103FskRx bell103Rx;
 Bell103Session bell103Session;
 Bell103DataLink bell103Data;
 GgWaveMode ggwaveMode;
+GgWaveChatLink ggwaveLink;
 uint32_t ggwaveDecodeMaxUs=0;
 uint32_t ggwaveDecodeBlocks=0;
-uint8_t ggwaveLastRx[16]={};
-size_t ggwaveLastRxLength=0;
-uint32_t ggwaveLastRxAt=0;
 Bell103Role bell103SessionRole=Bell103Role::Originate;
 bool bell103Auto=false;
 bool bell103AutoFailureReported=false;
@@ -111,6 +111,7 @@ bool startGgWave();
 void stopGgWave();
 void serviceGgWave();
 void sendGgWave(const uint8_t* text,size_t length);
+bool ggwaveLinkSelfTest();
 
 bool writeRegister(uint8_t address,uint8_t reg,uint8_t value) {
   Wire.beginTransmission(address);
@@ -132,7 +133,7 @@ bool validMicrophoneGain(int gain) { return gain>=0&&gain<=42&&gain%6==0; }
 
 void audioSettingsCommand(const char* command) {
   if(!strcmp(command,"audio show")) {
-    Serial.printf("AUDIO CONFIG volume=%u gain_db=%u\n",speakerVolume,microphoneGainDb);
+    Serial.printf("AUDIO CONFIG volume=%u gain_db=%u ggwave_level=%u\n",speakerVolume,microphoneGainDb,ggwaveLevel);
     return;
   }
   int value=-1;char extra=0;
@@ -142,12 +143,17 @@ void audioSettingsCommand(const char* command) {
     audioSettingsCommand("audio show");return;
   }
   value=-1;
+  if(sscanf(command,"audio ggwave %d %c",&value,&extra)==1&&value>=20&&value<=95) {
+    ggwaveLevel=(uint8_t)value;preferences.putUChar("gglevel",ggwaveLevel);
+    audioSettingsCommand("audio show");return;
+  }
+  value=-1;
   if(sscanf(command,"audio gain %d %c",&value,&extra)==1&&validMicrophoneGain(value)) {
     if(es8311_microphone_gain_set(codec,(es8311_mic_gain_t)(value/6))!=ESP_OK){Serial.println("ERROR: audio gain could not be applied.");return;}
     microphoneGainDb=(uint8_t)value;preferences.putUChar("micgain",microphoneGainDb);
     audioSettingsCommand("audio show");return;
   }
-  Serial.println("ERROR: use audio show|volume <0..100>|gain <0,6,..42>.");
+  Serial.println("ERROR: use audio show|volume <0..100>|gain <0,6,..42>|ggwave <20..95>.");
 }
 
 void screenStatus(const char* status) {
@@ -288,6 +294,8 @@ void setup() {
   if(speakerVolume>100)speakerVolume=50;
   microphoneGainDb=preferences.getUChar("micgain",6);
   if(!validMicrophoneGain(microphoneGainDb))microphoneGainDb=6;
+  ggwaveLevel=preferences.getUChar("gglevel",80);
+  if(ggwaveLevel<20||ggwaveLevel>95)ggwaveLevel=80;
   String savedSource=preferences.getString("src","ATOMA");
   String savedDestination=preferences.getString("dst","ATOMB");
   if(validCall(savedSource.c_str())&&validCall(savedDestination.c_str())) {
@@ -1061,10 +1069,11 @@ bool startGgWave() {
     startLiveReceiver();return false;
   }
   acousticMode=AcousticMode::GgWave;
+  ggwaveLink.reset();
+  ggwaveLink.setIdSeed((uint16_t)esp_random());
   ggwaveDecodeMaxUs=0;ggwaveDecodeBlocks=0;
-  ggwaveLastRxLength=0;ggwaveLastRxAt=0;
   screenStatus("GGWAVE RX WAIT");
-  Serial.printf("GGWAVE READY protocol=DT_FASTEST payload_max=16 sample_rate=24000 i2s=48000 heap=%d internal_free=%u psram_free=%u\n",
+  Serial.printf("GGWAVE READY protocol=DT_FASTEST text_max=280 payload_max=64 sample_rate=24000 i2s=48000 heap=%d internal_free=%u psram_free=%u\n",
                 ggwaveMode.heapBytes(),(unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),(unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
   return true;
 }
@@ -1072,6 +1081,7 @@ bool startGgWave() {
 void stopGgWave() {
   if(acousticMode!=AcousticMode::GgWave)return;
   ggwaveMode.stop();
+  ggwaveLink.reset();
   speakerEnable(false);
   acousticMode=AcousticMode::Ax25;
   startLiveReceiver();
@@ -1080,18 +1090,41 @@ void stopGgWave() {
 
 void sendGgWave(const uint8_t* text,size_t length) {
   if(acousticMode!=AcousticMode::GgWave){Serial.println("ERROR: use ggwave on first.");return;}
-  if(ggwaveMode.transmitting()){Serial.println("GGWAVE TX BUSY");return;}
-  if(!length||length>GgWaveMode::kPayloadBytes){Serial.println("GGWAVE TX FAILED: UTF-8 length must be 1..16 bytes.");return;}
-  if(!ggwaveMode.beginTx(text,length)) {
-    Serial.println("GGWAVE TX FAILED: invalid UTF-8 or codec allocation.");
-    if(!ggwaveMode.beginRx())stopGgWave();return;
+  if(ggwaveMode.transmitting()||ggwaveLink.busy()) {Serial.println("GGWAVE TX FAILED: previous message is still active.");return;}
+  if(!ggwaveLink.queue(text,length,millis())) {
+    Serial.println("GGWAVE TX FAILED: UTF-8 text must be 1..280 characters and at most 1120 bytes, without newlines.");return;
   }
-  if(!speakerEnable(true)) {
-    Serial.println("GGWAVE TX FAILED: speaker enable.");
-    ggwaveMode.stop();if(!ggwaveMode.beginRx())stopGgWave();return;
+  Serial.printf("GGWAVE MESSAGE QUEUED bytes=%u parts=%u id=%u\n",(unsigned)length,
+                (unsigned)ggwaveLink.totalFragments(),(unsigned)ggwaveLink.sendId());
+}
+
+bool ggwaveLinkSelfTest() {
+  static GgWaveChatLink sender,receiver;
+  static uint8_t text[840],delivered[GgWaveChatLink::kMaxTextBytes];
+  sender.reset();receiver.reset();sender.setIdSeed(0x2468);
+  // 280 Japanese code points, 840 UTF-8 bytes, 16 acoustic DATA frames.
+  for(size_t i=0;i<280;++i){text[3*i]=0xe3;text[3*i+1]=0x81;text[3*i+2]=0x82;} // あ
+  uint32_t now=1000;
+  if(!sender.queue(text,sizeof(text),now))return false;
+  bool droppedFirstAck=false;unsigned receivedMessages=0,acknowledged=0;
+  for(unsigned step=0;step<30000;++step) {
+    uint8_t frame[GgWaveChatLink::kFrameBytes];size_t length=0;
+    if(sender.poll(now,frame)) {
+      now+=1000;sender.txComplete(now);
+      auto event=receiver.accept(frame,now,delivered,length);
+      if(event==GgWaveChatLink::Event::Received) {
+        if(length!=sizeof(text)||memcmp(delivered,text,length))return false;
+        ++receivedMessages;
+      }
+    } else if(receiver.poll(now,frame)) {
+      now+=1000;receiver.txComplete(now);
+      if(!droppedFirstAck) droppedFirstAck=true;
+      else if(sender.accept(frame,now,delivered,length)==GgWaveChatLink::Event::Delivered)++acknowledged;
+    } else now+=50;
+    if(acknowledged)return droppedFirstAck&&receivedMessages==1&&sender.sentFragments()==sender.totalFragments();
+    if(sender.takeFailure())return false;
   }
-  screenStatus("GGWAVE TX");
-  Serial.printf("GGWAVE TX START bytes=%u\n",(unsigned)length);
+  return false;
 }
 
 void serviceGgWave() {
@@ -1100,8 +1133,9 @@ void serviceGgWave() {
     int32_t stereo[256*2];
     const size_t frames=ggwaveMode.renderTx48(stereo,256);
     if(frames && !audioSink(stereo,frames,nullptr)) {
-      Serial.println("GGWAVE TX FAILED: I2S write.");
+      Serial.println("GGWAVE FRAME TX FAILED: I2S write.");
       ggwaveMode.stop();speakerEnable(false);prepareReceiver();
+      ggwaveLink.txFailed(millis());
       if(!ggwaveMode.beginRx())stopGgWave();return;
     }
     if(ggwaveMode.txFinished()) {
@@ -1110,33 +1144,58 @@ void serviceGgWave() {
       speakerEnable(false);
       prepareReceiver();
       if(!ggwaveMode.beginRx()) {Serial.println("GGWAVE RX FAILED: allocation after TX.");stopGgWave();return;}
+      ggwaveLink.txComplete(millis());
       screenStatus("GGWAVE RX WAIT");
       Serial.println("GGWAVE TX DONE; RX WAIT.");
     }
     return;
   }
+  uint8_t outgoing[GgWaveChatLink::kFrameBytes];
+  if(ggwaveLink.poll(millis(),outgoing)) {
+    if(!ggwaveMode.beginTx(outgoing,sizeof(outgoing),ggwaveLevel)) {
+      Serial.println("GGWAVE FRAME TX FAILED: codec allocation.");
+      ggwaveLink.txFailed(millis());
+      if(!ggwaveMode.beginRx())stopGgWave();return;
+    }
+    if(!speakerEnable(true)) {
+      Serial.println("GGWAVE FRAME TX FAILED: speaker enable.");
+      ggwaveMode.stop();ggwaveLink.txFailed(millis());
+      if(!ggwaveMode.beginRx())stopGgWave();return;
+    }
+    screenStatus("GGWAVE TX");
+    Serial.printf("GGWAVE TX START bytes=64 level=%u\n",ggwaveLevel);
+    return;
+  }
+  if(ggwaveLink.takeFailure()) {
+    screenStatus("GGWAVE SEND FAIL");
+    Serial.println("GGWAVE MESSAGE FAILED: ACK retries exhausted.");
+  }
   size_t received=0;
   const esp_err_t err=i2s_channel_read(audio.rxChan(),liveBlock,sizeof(liveBlock),&received,10);
   if(err==ESP_ERR_TIMEOUT||received==0)return;
   if(err!=ESP_OK){Serial.println("GGWAVE RX FAILED: I2S read.");stopGgWave();return;}
-  uint8_t text[GgWaveMode::kPayloadBytes];
+  uint8_t frame[GgWaveMode::kPayloadBytes];
   const uint32_t began=micros();
-  const int length=ggwaveMode.feedRx48(liveBlock,received/(2*sizeof(int32_t)),text,sizeof(text));
+  const int length=ggwaveMode.feedRx48(liveBlock,received/(2*sizeof(int32_t)),frame,sizeof(frame));
   const uint32_t elapsed=micros()-began;
   if(elapsed>ggwaveDecodeMaxUs)ggwaveDecodeMaxUs=elapsed;
   ++ggwaveDecodeBlocks;
   if(length>0){
-    const uint32_t now=millis();
-    if(ggwaveLastRxLength==(size_t)length && now-ggwaveLastRxAt<3000 &&
-       !memcmp(ggwaveLastRx,text,length)) {
-      Serial.println("GGWAVE RX DUPLICATE suppressed");
-    } else {
-      memcpy(ggwaveLastRx,text,length);ggwaveLastRxLength=length;ggwaveLastRxAt=now;
-      screenStatus("GGWAVE RX OK");screenText(text,length);
-      Serial.print("GGWAVE RX TEXT: ");Serial.write(text,length);Serial.println();
-    }
-  } else if(length==-2)Serial.println("GGWAVE RX FAILED: invalid UTF-8/padding.");
-  else if(length==-1)Serial.println("GGWAVE RX FAILED: decoder input.");
+    uint8_t text[GgWaveChatLink::kMaxTextBytes];size_t textLength=0;
+    const auto event=ggwaveLink.accept(frame,millis(),text,textLength);
+    if(event==GgWaveChatLink::Event::Received){
+      screenStatus("GGWAVE RX OK");screenText(text,textLength);
+      Serial.print("GGWAVE RX TEXT: ");Serial.write(text,textLength);Serial.println();
+    } else if(event==GgWaveChatLink::Event::Delivered) {
+      Serial.println("GGWAVE MESSAGE SENT: all fragments acknowledged.");
+    } else if(event==GgWaveChatLink::Event::AckReceived) {
+      Serial.printf("GGWAVE TX PROGRESS %u/%u\n",(unsigned)ggwaveLink.sentFragments(),
+                    (unsigned)ggwaveLink.totalFragments());
+    } else if(event==GgWaveChatLink::Event::FragmentReceived) {
+      Serial.printf("GGWAVE RX PROGRESS %u/%u\n",(unsigned)ggwaveLink.receivedFragments(),
+                    (unsigned)ggwaveLink.expectedFragments());
+    } else if(event==GgWaveChatLink::Event::Invalid) Serial.println("GGWAVE RX FAILED: invalid frame or UTF-8.");
+  } else if(length==-1)Serial.println("GGWAVE RX FAILED: decoder input.");
 }
 
 void loop() {
@@ -1163,7 +1222,7 @@ void loop() {
     bool resume=liveRx; stopLiveReceiver(false); dumpRecording(); if(resume)startLiveReceiver(); return;
   }
   if (!commandLength && c=='?') {
-    Serial.println("Commands: t <ASCII>; g <UTF-8>; k <UTF8-HEX>; group on|off|show; monitor on|off|show; acoustic show|ax25|ggwave; ggwave on|off|show|send <UTF-8 (1..16 bytes)>; audio show|volume <0..100>|gain <0,6,..42>; bell103 tone|selftest|session selftest|session caller|answerer|tx|rx|show|stop|rx originate|rx answer|tx originate <text>|tx answer <text>; z <HEX>; y <HEX>; mode ppp; slip on; boot show|normal|slip|ppp|reset; u <HEX>; x <PIDHEX> <HEX>; c <SRC> <DEST>; l=RX; q=stop; r=batch; p=PCM."); return;
+    Serial.println("Commands: t <ASCII>; g <UTF-8>; k <UTF8-HEX>; group on|off|show; monitor on|off|show; acoustic show|ax25|ggwave; ggwave on|off|show|send <UTF-8 (1..280 chars)>; audio show|volume <0..100>|gain <0,6,..42>|ggwave <20..95>; bell103 tone|selftest|session selftest|session caller|answerer|tx|rx|show|stop|rx originate|rx answer|tx originate <text>|tx answer <text>; z <HEX>; y <HEX>; mode ppp; slip on; boot show|normal|slip|ppp|reset; u <HEX>; x <PIDHEX> <HEX>; c <SRC> <DEST>; l=RX; q=stop; r=batch; p=PCM."); return;
   }
   if (c=='\r') return;
   if (c=='\n') {
@@ -1185,8 +1244,10 @@ void loop() {
     }
     else if(!strcmp(commandLine,"ggwave on"))startGgWave();
     else if(!strcmp(commandLine,"ggwave off"))stopGgWave();
+    else if(!strcmp(commandLine,"ggwave link selftest"))
+      Serial.println(ggwaveLinkSelfTest()?"GGWAVE LINK SELFTEST PASS":"GGWAVE LINK SELFTEST FAIL");
     else if(!strcmp(commandLine,"ggwave show"))
-      Serial.printf("GGWAVE MODE=%s state=%s payload_max=16 protocol=DT_FASTEST heap=%d internal_free=%u psram_free=%u rx_max_us=%u rx_blocks=%u\n",
+      Serial.printf("GGWAVE MODE=%s state=%s text_max=280 payload_max=64 protocol=DT_FASTEST heap=%d internal_free=%u psram_free=%u rx_max_us=%u rx_blocks=%u\n",
                     acousticMode==AcousticMode::GgWave?"on":"off",acousticMode!=AcousticMode::GgWave?"off":ggwaveMode.transmitting()?"tx":"rx_wait",
                     ggwaveMode.heapBytes(),(unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),(unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
                     (unsigned)ggwaveDecodeMaxUs,(unsigned)ggwaveDecodeBlocks);

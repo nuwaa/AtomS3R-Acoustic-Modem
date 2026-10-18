@@ -51,7 +51,7 @@ def main():
             assert_no_repeat(port, "GGWAVE RX TEXT: こんにちは")
             print("PCで受信しました。Androidへ『你好』を送信します。", flush=True)
             send(port, "ggwave send 你好")
-            await_line(port, "GGWAVE TX DONE", 15)
+            await_line(port, "GGWAVE MESSAGE SENT", 90)
             print("PCの送信完了。Androidのチャット画面で『你好』を確認してください。", flush=True)
             send(port, "ggwave show")
             await_line(port, "GGWAVE MODE=", 5)

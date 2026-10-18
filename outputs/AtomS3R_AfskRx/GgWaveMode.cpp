@@ -40,14 +40,14 @@ bool GgWaveMode::beginRx() {
   return true;
 }
 
-bool GgWaveMode::beginTx(const uint8_t* utf8, size_t length) {
-  if (!utf8 || !length || length > kPayloadBytes || !validUtf8(utf8, length)) return false;
+bool GgWaveMode::beginTx(const uint8_t* frame, size_t length, int volume) {
+  if (!frame || length != kPayloadBytes || volume < 20 || volume > 95) return false;
   stop(); // RX FFT history cannot include our own speaker output.
   GGWave::Protocols::tx().only(GGWAVE_PROTOCOL_DT_FASTEST);
   modem_ = new (std::nothrow) GGWave();
   if (!modem_ || !modem_->prepare(parameters(GGWAVE_OPERATING_MODE_TX)) ||
-      !modem_->init(static_cast<int>(length), reinterpret_cast<const char*>(utf8),
-                    GGWAVE_PROTOCOL_DT_FASTEST, 60)) {
+      !modem_->init(static_cast<int>(length), reinterpret_cast<const char*>(frame),
+                    GGWAVE_PROTOCOL_DT_FASTEST, volume)) {
     stop();
     return false;
   }
@@ -79,33 +79,8 @@ size_t GgWaveMode::renderTx48(int32_t* stereo, size_t capacityFrames) {
   return sourceCount * 2;
 }
 
-bool GgWaveMode::validUtf8(const uint8_t* text, size_t length) {
-  for (size_t i = 0; i < length;) {
-    const uint8_t first = text[i];
-    if (first == 0 || first == '\r' || first == '\n') return false;
-    if (first < 0x80) { ++i; continue; }
-    int extra = 0;
-    uint32_t codepoint = 0;
-    if (first >= 0xC2 && first <= 0xDF) { extra = 1; codepoint = first & 0x1F; }
-    else if (first >= 0xE0 && first <= 0xEF) { extra = 2; codepoint = first & 0x0F; }
-    else if (first >= 0xF0 && first <= 0xF4) { extra = 3; codepoint = first & 0x07; }
-    else return false;
-    if (i + extra >= length) return false;
-    for (int j = 1; j <= extra; ++j) {
-      if ((text[i+j] & 0xC0) != 0x80) return false;
-      codepoint = (codepoint << 6) | (text[i+j] & 0x3F);
-    }
-    if ((extra == 1 && codepoint < 0x80) ||
-        (extra == 2 && codepoint < 0x800) ||
-        (extra == 3 && codepoint < 0x10000) ||
-        (codepoint >= 0xD800 && codepoint <= 0xDFFF) || codepoint > 0x10FFFF) return false;
-    i += extra + 1;
-  }
-  return true;
-}
-
-int GgWaveMode::feedRx48(const int32_t* stereo, size_t frames, uint8_t* text, size_t capacity) {
-  if (!modem_ || transmitting_ || !stereo || !text || capacity < kPayloadBytes || frames > kMaxInputFrames) return -1;
+int GgWaveMode::feedRx48(const int32_t* stereo, size_t frames, uint8_t* data, size_t capacity) {
+  if (!modem_ || transmitting_ || !stereo || !data || capacity < kPayloadBytes || frames > kMaxInputFrames) return -1;
   for (size_t i = 0; i < frames; ++i) {
     const int16_t sample = static_cast<int16_t>(stereo[2*i] >> 16);
     if (!haveOdd_) { oddSample_ = sample; haveOdd_ = true; }
@@ -122,10 +97,6 @@ int GgWaveMode::feedRx48(const int32_t* stereo, size_t frames, uint8_t* text, si
   const int length = modem_->rxTakeData(decoded);
   if (length <= 0) return 0;
   if (length != static_cast<int>(kPayloadBytes)) return -2;
-  size_t used = 0;
-  while (used < kPayloadBytes && decoded[used] != 0) ++used;
-  if (!used || !validUtf8(decoded.data(), used)) return -2;
-  for (size_t i = used; i < kPayloadBytes; ++i) if (decoded[i] != 0) return -2;
-  memcpy(text, decoded.data(), used);
-  return static_cast<int>(used);
+  memcpy(data, decoded.data(), kPayloadBytes);
+  return static_cast<int>(kPayloadBytes);
 }

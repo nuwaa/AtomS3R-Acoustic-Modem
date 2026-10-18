@@ -79,9 +79,10 @@ final class UsbCdcTransport {
     void sendBell103(String text){byte[] utf8=text.getBytes(StandardCharsets.UTF_8);if(utf8.length<1||utf8.length>70||text.indexOf('\n')>=0||text.indexOf('\r')>=0)throw new IllegalArgumentException("Bell 103本文は改行なしのUTF-8で1..70バイト");sendRaw(("bell103 data send "+text+"\n").getBytes(StandardCharsets.UTF_8));}
     void startGgWave(){sendRaw("group off\n".getBytes(StandardCharsets.US_ASCII));ggMode=true;sendRaw("ggwave on\n".getBytes(StandardCharsets.US_ASCII));}
     void stopGgWave(){sendRaw("ggwave off\n".getBytes(StandardCharsets.US_ASCII));ggMode=false;requestInbox();}
-    void sendGgWave(String text){byte[] utf8=text.getBytes(StandardCharsets.UTF_8);if(utf8.length<1||utf8.length>16||text.indexOf('\n')>=0||text.indexOf('\r')>=0||text.indexOf('\0')>=0)throw new IllegalArgumentException("ggwave本文は改行なしのUTF-8で1..16バイト");sendRaw(("ggwave send "+text+"\n").getBytes(StandardCharsets.UTF_8));}
+    void sendGgWave(String text){byte[] utf8=text.getBytes(StandardCharsets.UTF_8);if(utf8.length<1||utf8.length>1120||text.codePointCount(0,text.length())>280||text.indexOf('\n')>=0||text.indexOf('\r')>=0||text.indexOf('\0')>=0)throw new IllegalArgumentException("ggwave本文は改行なしで最大280文字・1120 UTF-8バイト");sendRaw(("ggwave send "+text+"\n").getBytes(StandardCharsets.UTF_8));}
     void requestAudioSettings(){sendRaw("audio show\n".getBytes(StandardCharsets.US_ASCII));}
     void setSpeakerVolume(int percent){if(percent<0||percent>100)throw new IllegalArgumentException("音量は0～100%です");sendRaw(("audio volume "+percent+"\n").getBytes(StandardCharsets.US_ASCII));}
+    void setGgWaveLevel(int percent){if(percent<20||percent>95)throw new IllegalArgumentException("ggwave送信レベルは20～95%です");sendRaw(("audio ggwave "+percent+"\n").getBytes(StandardCharsets.US_ASCII));}
     void setMicrophoneGain(int gainDb){if(gainDb<0||gainDb>42||gainDb%6!=0)throw new IllegalArgumentException("マイクゲインは0～42 dBの6 dB刻みです");sendRaw(("audio gain "+gainDb+"\n").getBytes(StandardCharsets.US_ASCII));}
     void setAcousticReceiverEnabled(boolean enabled){sendRaw(new byte[]{(byte)(enabled?'l':'q')});}
     void setGroupMode(boolean enabled){sendRaw(("group "+(enabled?"on":"off")+"\n").getBytes(StandardCharsets.US_ASCII));}

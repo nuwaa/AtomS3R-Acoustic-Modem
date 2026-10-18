@@ -85,7 +85,7 @@ PCの「ATOM Peer Chat」は [START_PC_PEER_CHAT.cmd](START_PC_PEER_CHAT.cmd) �
 
 このリポジトリで作成したソースは [MIT License](LICENSE) です。第三者の依存物は各配布元のライセンスに従います。ggwave-arduino 0.1.10 は [公式ソース](https://github.com/ggerganov/ggwave-arduino) のコミット `2e13b3cf515166317a29bbb7643042ce78650e22` を [third_party/ggwave-arduino](third_party/ggwave-arduino) に同梱し、その [MITライセンス](third_party/ggwave-arduino/LICENSE) と内部の [Reed–Solomon MITライセンス](third_party/ggwave-arduino/src/ggwave/reed-solomon/LICENSE) を保持しています。
 
-## ggwave 開発モード（実機検証中）
+## ggwave 0.4.0 短文モードの検証記録
 
 公式ggwaveの `DT_FASTEST`（可聴音、固定長16バイト）を独立した第三の通信モードとして追加しました。UTF-8で1通1〜16バイトを扱い、「こんにちは」（15バイト）、「你好」（6バイト）、「Hello」（5バイト）が収まります。長文分割、ACK、再送はまだありません。48 kHzのES8311 I2S PCMと、公式コーデックの24 kHz・512サンプルフレームとの間で2:1変換します。送信中は受信コーデックを停止し、終了後に受信待機へ戻します。音量・マイクゲインは従来と同じATOM保存値を使用します。Bell 103の接続音やAX.25との同時動作はしません。
 
@@ -94,3 +94,11 @@ PCの「ATOM Peer Chat」は [START_PC_PEER_CHAT.cmd](START_PC_PEER_CHAT.cmd) �
 PC上では公式ggwave 0.4.0の送受信で、上記3言語を24 kHz固定長DT信号として符号化・復号し、48 kHzへの変換を挟んでも往復することを確認しました。最初のATOM空中試験では10%の送信波形が小さすぎ、受信側は復号できませんでした。波形振幅を60%に上げたPC試験ではピーク19660/32767でクリップしませんでした。COM5・COM6の2台を近づけた実機試験では「こんにちは」「你好」「Hello」が交互に双方向で届き、`TEST PASS` でした。ggwaveは46,500バイトのコーデック領域を確保し、試験中の受信処理の最長実行時間はCOM5で1,340µs、COM6で1,345µsでした。受信待機時の空きは内蔵RAM約213KB、PSRAM約7.16MBです。試験直後のAX.25直接チャットも「こんにちは!」と「你好!」が双方向で本文・ACKとも通過しました。Bell 103自動接続・双方向本文・ACKの回帰試験もCOM5・COM6で `TEST PASS` でした。PC↔Androidでも「こんにちは」と「你好」の本文は双方向に届きました。最初は同じ信号を短時間に二重復号しましたが、同一本文の3秒以内の重複表示を抑える修正後は、2台ATOMの3言語試験が重複なしで `TEST PASS`、PC↔OPPOも両方向各1回の着信を確認しました。**同じ本文を意図的に3秒以内で連続送信した場合も2通目を抑える制約があります。公式PC波形との実機相互通信、騒音下での成功率は未検証です。**
 
 切替の回帰試験では、PC側ATOMとOPPO側ATOMでggwave終了後にAX.25直接チャットが双方向で本文・ACKとも通過しました。PC側のUSB接続が一時不安定だったため、PC本体のUSB端子へ直接つなぎ直してからBell 103を再試験し、PC→OPPOとOPPO→PCの短文・ACKを確認しました。Bell 103切断後のAX.25直接チャットも双方向で通過しました。PCブラウザチャットの起動・USB再接続時はATOMにAX.25への切替を明示します。
+
+## ggwave 0.4.1 長文モード（実機検証前）
+
+1通の上限をUnicode 280文字、UTF-8で最大1120バイトに拡張しました。公式ggwaveの可聴 `DT_FASTEST` を固定長64バイトで使い、本文を最大54バイトずつ分割します。各フレームにメッセージIDと番号を付け、半二重のACKを待ってから次を送ります。ACKが欠落したフレームは再送し、受信側は重複本文を表示しません。長文ほど時間がかかり、同時送信は避けてください。Android 0.4.1では送信進捗・送達・失敗を表示します。
+
+既存の「音響設定」のスピーカー音量・マイクゲインはそのまま使えます。新しい「ggwave送信レベル」は20〜95%で調整し、ATOMに保存します。初期値は80%です。音量を上げすぎると音割れや復号失敗につながるため、まずスピーカー音量50%・マイク6 dB・ggwave 80%で試してください。
+
+ビルド後、COM5で [TEST_GGWAVE_LINK_SELFTEST.cmd](TEST_GGWAVE_LINK_SELFTEST.cmd) を実行すると、280文字の分割・ACK一回欠落からの回復・重複表示防止をATOM内部で検査できます。続けてCOM5/COM6の2台を近づけ、[TEST_GGWAVE_AIR.cmd](TEST_GGWAVE_AIR.cmd) で短文を、[TEST_GGWAVE_LONG_AIR.cmd](TEST_GGWAVE_LONG_AIR.cmd) で280文字を試します。ファームウェア・Androidのビルド、実機の音響通信、AX.25とBell 103の回帰はこの0.4.1版で**未検証**です。上の0.4.0版のPASSを0.4.1版の結果として扱わないでください。

@@ -64,9 +64,12 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
     private Button ggButton;
     private int speakerVolume = 50;
     private int microphoneGainDb = 6;
+    private int ggwaveLevel = 80;
     private int audioProfile = 1;
     private SeekBar activeVolumeSlider;
     private TextView activeVolumeValue;
+    private SeekBar activeGgWaveSlider;
+    private TextView activeGgWaveValue;
     private RadioGroup activeGainChoices;
     private RadioGroup activeProfileChoices;
     private TextView activeAudioFeedback;
@@ -336,6 +339,8 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         updatingAudioControls = true;
         if (activeVolumeSlider != null) activeVolumeSlider.setProgress(speakerVolume);
         if (activeVolumeValue != null) activeVolumeValue.setText(speakerVolume + "%");
+        if (activeGgWaveSlider != null) activeGgWaveSlider.setProgress(ggwaveLevel - 20);
+        if (activeGgWaveValue != null) activeGgWaveValue.setText(ggwaveLevel + "%");
         if (activeGainChoices != null) activeGainChoices.check(2000 + microphoneGainDb / 6);
         if (activeProfileChoices != null) activeProfileChoices.check(3000 + audioProfile);
         updatingAudioControls = false;
@@ -350,6 +355,20 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
             microphoneGainDb = gainDb;
             refreshAudioControls();
             if (activeAudioFeedback != null) activeAudioFeedback.setText("ATOMへ設定を送信しました。反映結果を確認中…");
+        } catch (RuntimeException error) {
+            refreshAudioControls();
+            if (activeAudioFeedback != null) activeAudioFeedback.setText(error.getMessage());
+            onStatus(error.getMessage());
+        }
+    }
+
+    private void applyGgWaveLevel(int level) {
+        try {
+            if (!usb.isConnected()) throw new IllegalStateException("ATOMをUSB接続してから調整してください");
+            usb.setGgWaveLevel(level);
+            ggwaveLevel = level;
+            refreshAudioControls();
+            if (activeAudioFeedback != null) activeAudioFeedback.setText("ATOMへggwave送信レベルを送信しました。反映結果を確認中…");
         } catch (RuntimeException error) {
             refreshAudioControls();
             if (activeAudioFeedback != null) activeAudioFeedback.setText(error.getMessage());
@@ -386,6 +405,15 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         activeVolumeSlider = slider;
         card.addView(slider);
         card.addView(audioLabel("小                                                        大", 12));
+        card.addView(audioLabel("ggwave送信レベル", 16));
+        TextView waveValue = audioLabel(ggwaveLevel + "%", 14);
+        activeGgWaveValue = waveValue;
+        card.addView(waveValue);
+        SeekBar waveSlider = new SeekBar(this);
+        waveSlider.setMax(75); // 20..95%; above 95% approaches digital clipping.
+        activeGgWaveSlider = waveSlider;
+        card.addView(waveSlider);
+        card.addView(audioLabel("音が小さいときに調整。上げすぎると音割れするため95%まで。", 12));
         card.addView(audioLabel("マイクゲイン", 16));
         RadioGroup gains = new RadioGroup(this);
         gains.setOrientation(RadioGroup.HORIZONTAL);
@@ -427,6 +455,15 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
                 applyAudioSettings(seekBar.getProgress(), microphoneGainDb, true, false);
             }
         });
+        waveSlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (fromUser) waveValue.setText((progress + 20) + "%");
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                applyGgWaveLevel(seekBar.getProgress() + 20);
+            }
+        });
         gains.setOnCheckedChangeListener((group, checkedId) -> {
             if (updatingAudioControls || checkedId < 2000 || checkedId > 2007) return;
             audioProfile = 3;
@@ -436,6 +473,8 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         dialog.setOnDismissListener(ignored -> {
             activeVolumeSlider = null;
             activeVolumeValue = null;
+            activeGgWaveSlider = null;
+            activeGgWaveValue = null;
             activeGainChoices = null;
             activeProfileChoices = null;
             activeAudioFeedback = null;
@@ -586,7 +625,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
             getPreferences(MODE_PRIVATE).edit().putBoolean("groupMode", false).apply();
             modeButton.setText("通信: 直接");
             refreshMonitorUi();
-            addNotice("ggwave DT Fastestを開始。短文はUTF-8で最大16バイト、ACK・再送なし");
+            addNotice("ggwave DT Fastestを開始。1通最大280文字、分割送信とACK・再送に対応");
         } catch (RuntimeException error) { onStatus(error.getMessage()); }
     }
 
@@ -794,11 +833,13 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
             if (settings.find()) {
                 speakerVolume = Integer.parseInt(settings.group(1));
                 microphoneGainDb = Integer.parseInt(settings.group(2));
+                java.util.regex.Matcher wave = java.util.regex.Pattern.compile("ggwave_level=(\\d+)").matcher(text);
+                if (wave.find()) ggwaveLevel = Integer.parseInt(wave.group(1));
                 audioProfile = speakerVolume == 35 && microphoneGainDb == 0 ? 0
                         : speakerVolume == 50 && microphoneGainDb == 6 ? 1
                         : speakerVolume == 75 && microphoneGainDb == 12 ? 2 : 3;
                 refreshAudioControls();
-                if (activeAudioFeedback != null) activeAudioFeedback.setText("ATOMに反映済み: 音量 " + speakerVolume + "% / マイク " + microphoneGainDb + " dB");
+                if (activeAudioFeedback != null) activeAudioFeedback.setText("ATOMに反映済み: 音量 " + speakerVolume + "% / マイク " + microphoneGainDb + " dB / ggwave " + ggwaveLevel + "%");
             }
             return;
         } else if (text.startsWith("ERROR: audio ")) {
@@ -808,8 +849,11 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         else if (text.startsWith("ERROR: ggwave")) {ggActive=false;ggReady=false;ggSending=false;refreshMonitorUi();shown="ggwave開始失敗";}
         else if (text.startsWith("GGWAVE READY")) {ggActive=true;ggReady=true;ggSending=false;ggState="受信待機";refreshMonitorUi();shown="ggwave受信待機";}
         else if (text.startsWith("GGWAVE TX START")) {ggSending=true;ggState="送信中";refreshMonitorUi();shown="ggwave送信中";}
-        else if (text.startsWith("GGWAVE TX DONE")) {ggSending=false;ggState="受信待機";refreshMonitorUi();shown="ggwave送信完了・受信待機";}
-        else if (text.startsWith("GGWAVE TX FAILED")) {ggSending=false;ggState="送信失敗";refreshMonitorUi();shown="ggwave送信失敗";}
+        else if (text.startsWith("GGWAVE TX DONE")) {ggState="ACK待ち";refreshMonitorUi();shown="ggwave確認待ち";}
+        else if (text.startsWith("GGWAVE TX PROGRESS ")) {ggState="送信 " + text.substring("GGWAVE TX PROGRESS ".length());refreshMonitorUi();shown="ggwave " + ggState;}
+        else if (text.startsWith("GGWAVE RX PROGRESS ")) {shown="ggwave受信 " + text.substring("GGWAVE RX PROGRESS ".length());}
+        else if (text.startsWith("GGWAVE MESSAGE SENT")) {ggSending=false;ggState="受信待機";refreshMonitorUi();shown="ggwave送達確認";addNotice(shown);}
+        else if (text.startsWith("GGWAVE MESSAGE FAILED") || text.startsWith("GGWAVE TX FAILED")) {ggSending=false;ggState="送信失敗";refreshMonitorUi();shown="ggwave送信失敗";addNotice(shown);}
         else if (text.startsWith("GGWAVE RX FAILED")) {ggState="受信失敗";refreshMonitorUi();shown="ggwave受信失敗";}
         else if (text.startsWith("GGWAVE STOPPED")) {ggActive=false;ggReady=false;ggSending=false;refreshMonitorUi();shown="AX.25に復帰";}
         else if (text.startsWith("BELL103 AUTO RX CONTROL") && text.contains("state=connected")) {bellConnected = true;refreshMonitorUi();shown = "Bell 103接続済み";}
