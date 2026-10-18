@@ -95,10 +95,12 @@ PC上では公式ggwave 0.4.0の送受信で、上記3言語を24 kHz固定長DT
 
 切替の回帰試験では、PC側ATOMとOPPO側ATOMでggwave終了後にAX.25直接チャットが双方向で本文・ACKとも通過しました。PC側のUSB接続が一時不安定だったため、PC本体のUSB端子へ直接つなぎ直してからBell 103を再試験し、PC→OPPOとOPPO→PCの短文・ACKを確認しました。Bell 103切断後のAX.25直接チャットも双方向で通過しました。PCブラウザチャットの起動・USB再接続時はATOMにAX.25への切替を明示します。
 
-## ggwave 0.4.1 長文モード（実機検証前）
+## ggwave 0.4.2 長文モード（実機検証済み）
 
-1通の上限をUnicode 280文字、UTF-8で最大1120バイトに拡張しました。公式ggwaveの可聴 `DT_FASTEST` を固定長64バイトで使い、本文を最大54バイトずつ分割します。各フレームにメッセージIDと番号を付け、半二重のACKを待ってから次を送ります。ACKが欠落したフレームは再送し、受信側は重複本文を表示しません。長文ほど時間がかかり、同時送信は避けてください。Android 0.4.1では送信進捗・送達・失敗を表示します。
+1通の上限をUnicode 280文字、UTF-8で最大1120バイトに拡張しました。公式ggwaveの可聴 `DT_FASTEST` を固定長64バイトで使い、本文を最大54バイトずつ分割します。各フレームにメッセージIDと番号を付け、半二重のACKを待ってから次を送ります。ACKが欠落したフレームは再送し、受信側は重複本文を表示しません。長文ほど時間がかかり、同時送信は避けてください。Android 0.4.2では送信進捗・送達・失敗を表示し、受信確認ACKの送信が終わると次の本文を入力できます。
 
 既存の「音響設定」のスピーカー音量・マイクゲインはそのまま使えます。新しい「ggwave送信レベル」は20〜95%で調整し、ATOMに保存します。初期値は80%です。音量を上げすぎると音割れや復号失敗につながるため、まずスピーカー音量50%・マイク6 dB・ggwave 80%で試してください。
 
-ビルド後、COM5で [TEST_GGWAVE_LINK_SELFTEST.cmd](TEST_GGWAVE_LINK_SELFTEST.cmd) を実行すると、280文字の分割・ACK一回欠落からの回復・重複表示防止をATOM内部で検査できます。続けてCOM5/COM6の2台を近づけ、[TEST_GGWAVE_AIR.cmd](TEST_GGWAVE_AIR.cmd) で短文を、[TEST_GGWAVE_LONG_AIR.cmd](TEST_GGWAVE_LONG_AIR.cmd) で280文字を試します。ファームウェア・Androidのビルド、実機の音響通信、AX.25とBell 103の回帰はこの0.4.1版で**未検証**です。上の0.4.0版のPASSを0.4.1版の結果として扱わないでください。
+ファームウェアとAndroidアプリのビルドはPASSです。COM5で [TEST_GGWAVE_LINK_SELFTEST.cmd](TEST_GGWAVE_LINK_SELFTEST.cmd) を実行し、280文字の分割・ACK一回欠落からの回復・重複表示防止をATOM内部で確認しました。COM5/COM6の2台を近づけた [TEST_GGWAVE_AIR.cmd](TEST_GGWAVE_AIR.cmd) は「こんにちは」「你好」「Hello」の双方向本文・ACKでPASS、[TEST_GGWAVE_LONG_AIR.cmd](TEST_GGWAVE_LONG_AIR.cmd) は280文字・840 UTF-8バイトを16片に分割して全片ACK後に受信側へ1回だけ表示しPASSしました。固定64バイトフレーム1つの音は実測5,632 msで、280文字の送信は約3分かかりました。最初はArduinoループのスタック不足でPANIC、次に5秒のACK待ちが短すぎて失敗しましたが、ループスタック16 KiB、静的作業バッファ、ACK待ち20秒に修正した版で再試験しています。
+
+AX.25直接チャットは当初ggwave長文試験の直後に2回失敗し、ATOM 2台のUSB再起動後は双方向PASSでした。長文通信後に共有I2SとES8311を再初期化するよう修正し、ggwave 280文字の再試験PASSに続いて、**USB再起動なしでAX.25直接チャットが双方向PASS**しました。Bell 103自動接続もその後に双方向本文・ACKで `TEST PASS` でした（試験スクリプトのCOM6終了処理にはタイムアウト警告が出ました）。OPPOのAndroid 0.4.2でも [TEST_GGWAVE_PC_ANDROID_LONG.cmd](TEST_GGWAVE_PC_ANDROID_LONG.cmd) によりPC→OPPOの280文字が1回だけ表示され、全片ACK後にOPPOから返信できてPASSしました。[TEST_GGWAVE_ANDROID_LONG.cmd](TEST_GGWAVE_ANDROID_LONG.cmd) ではOPPO→PCの280文字が1回だけ届き、OPPOの送達確認も出てPASSしました。ggwave送信レベルはOPPOで80→90%に変更後、再表示とATOMへの反映を確認し、試験後80%へ戻しました。騒音下の成功率、長時間連続運用、2台のAndroid間での280文字通信は未検証です。

@@ -5,7 +5,9 @@
 namespace {
 constexpr uint8_t kData = 1;
 constexpr uint8_t kAck = 2;
-constexpr uint32_t kAckWaitMs = 5000;
+// A fixed 64-byte DT_FASTEST ACK takes several seconds on air. Allow the
+// entire ACK waveform plus decoder/turnaround time before retrying DATA.
+constexpr uint32_t kAckWaitMs = 20000;
 constexpr uint32_t kTurnaroundMs = 450;
 constexpr uint32_t kReceiveExpiryMs = 600000;
 constexpr uint8_t kMaxRetries = 4;

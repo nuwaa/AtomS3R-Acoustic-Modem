@@ -16,6 +16,7 @@ public:
   bool beginTx(const uint8_t* frame, size_t length, int volume);
   void stop();
   bool transmitting() const { return transmitting_; }
+  uint32_t txDurationMs() const { return static_cast<uint32_t>(txSamples_ * 1000 / 24000); }
   bool txFinished() const { return transmitting_ && txOffset_ >= txSamples_; }
   size_t renderTx48(int32_t* stereo, size_t capacityFrames);
   // Positive: raw frame byte count. 0: waiting. -1: audio/codec error.

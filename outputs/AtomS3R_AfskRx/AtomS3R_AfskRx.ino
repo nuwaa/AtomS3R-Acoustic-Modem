@@ -25,6 +25,10 @@
 #include "GgWaveMode.h"
 #include "GgWaveChatLink.h"
 
+// Official ggwave's 64-byte fixed frame needs more temporary decoder/encoder
+// space than the Arduino core's default 8 KiB loop task provides.
+SET_LOOP_TASK_STACK_SIZE(16384);
+
 constexpr size_t SAMPLE_RATE = 48000;
 constexpr size_t SAMPLES = SAMPLE_RATE * 3;
 I2SClass audio;
@@ -1083,6 +1087,23 @@ void stopGgWave() {
   ggwaveMode.stop();
   ggwaveLink.reset();
   speakerEnable(false);
+  // A long stop-and-wait exchange repeatedly alternates the shared I2S
+  // peripheral between RX and TX. Recreate its channels and reapply the
+  // saved codec settings before handing the hardware back to AX.25.
+  audio.end();
+  audio.setPins(8,6,5,7,-1);
+  if(!audio.begin(I2S_MODE_STD,SAMPLE_RATE,I2S_DATA_BIT_WIDTH_32BIT,I2S_SLOT_MODE_STEREO))
+    fatal("ERROR: I2S restart after ggwave.");
+  es8311_clock_config_t clock = {};
+  clock.mclk_from_mclk_pin = false;
+  clock.sample_frequency = SAMPLE_RATE;
+  if(es8311_init(codec,&clock,ES8311_RESOLUTION_32,ES8311_RESOLUTION_32)!=ESP_OK ||
+     es8311_microphone_config(codec,false)!=ESP_OK ||
+     es8311_microphone_gain_set(codec,(es8311_mic_gain_t)(microphoneGainDb/6))!=ESP_OK ||
+     es8311_voice_volume_set(codec,speakerVolume,nullptr)!=ESP_OK ||
+     es8311_voice_mute(codec,true)!=ESP_OK)
+    fatal("ERROR: ES8311 restart after ggwave.");
+  Serial.println("GGWAVE AUDIO RESET: I2S and ES8311 ready for AX.25.");
   acousticMode=AcousticMode::Ax25;
   startLiveReceiver();
   Serial.println("GGWAVE STOPPED; ACOUSTIC MODE=ax25.");
@@ -1129,8 +1150,12 @@ bool ggwaveLinkSelfTest() {
 
 void serviceGgWave() {
   if(acousticMode!=AcousticMode::GgWave)return;
+  // The Arduino loop task has a small stack. A 64-byte fixed ggwave frame
+  // already uses substantial codec stack, so keep PCM and reassembly buffers
+  // in static storage instead of adding them to every service call's frame.
+  static int32_t stereo[256*2];
+  static uint8_t text[GgWaveChatLink::kMaxTextBytes];
   if(ggwaveMode.transmitting()) {
-    int32_t stereo[256*2];
     const size_t frames=ggwaveMode.renderTx48(stereo,256);
     if(frames && !audioSink(stereo,frames,nullptr)) {
       Serial.println("GGWAVE FRAME TX FAILED: I2S write.");
@@ -1163,7 +1188,8 @@ void serviceGgWave() {
       if(!ggwaveMode.beginRx())stopGgWave();return;
     }
     screenStatus("GGWAVE TX");
-    Serial.printf("GGWAVE TX START bytes=64 level=%u\n",ggwaveLevel);
+    Serial.printf("GGWAVE TX START bytes=64 level=%u duration_ms=%lu\n",
+                  ggwaveLevel,(unsigned long)ggwaveMode.txDurationMs());
     return;
   }
   if(ggwaveLink.takeFailure()) {
@@ -1181,7 +1207,7 @@ void serviceGgWave() {
   if(elapsed>ggwaveDecodeMaxUs)ggwaveDecodeMaxUs=elapsed;
   ++ggwaveDecodeBlocks;
   if(length>0){
-    uint8_t text[GgWaveChatLink::kMaxTextBytes];size_t textLength=0;
+    size_t textLength=0;
     const auto event=ggwaveLink.accept(frame,millis(),text,textLength);
     if(event==GgWaveChatLink::Event::Received){
       screenStatus("GGWAVE RX OK");screenText(text,textLength);

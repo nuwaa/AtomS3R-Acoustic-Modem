@@ -80,6 +80,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
     private boolean ggActive = false;
     private boolean ggReady = false;
     private boolean ggSending = false;
+    private boolean ggAckSending = false;
     private String ggState = "受信待機";
     private boolean groupMode = false;
     private boolean monitorMode = false;
@@ -557,6 +558,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
             if (ggActive) {
                 if (!ggReady || ggSending) { onStatus("ggwaveは受信準備中または送信中です"); return; }
                 usb.sendGgWave(text);
+                ggAckSending = false;
                 ggSending = true;
                 ggState = "送信中";
                 refreshMonitorUi();
@@ -845,17 +847,17 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         } else if (text.startsWith("ERROR: audio ")) {
             if (activeAudioFeedback != null) activeAudioFeedback.setText(text);
         }
-        if (text.startsWith("USB-C接続済み")) {monitorConfirmed = false;bellActive = false;bellConnected = false;bellPending = false;ggActive=false;ggReady=false;ggSending=false;refreshMonitorUi();shown = "ATOM接続済み";}
-        else if (text.startsWith("ERROR: ggwave")) {ggActive=false;ggReady=false;ggSending=false;refreshMonitorUi();shown="ggwave開始失敗";}
-        else if (text.startsWith("GGWAVE READY")) {ggActive=true;ggReady=true;ggSending=false;ggState="受信待機";refreshMonitorUi();shown="ggwave受信待機";}
-        else if (text.startsWith("GGWAVE TX START")) {ggSending=true;ggState="送信中";refreshMonitorUi();shown="ggwave送信中";}
-        else if (text.startsWith("GGWAVE TX DONE")) {ggState="ACK待ち";refreshMonitorUi();shown="ggwave確認待ち";}
+        if (text.startsWith("USB-C接続済み")) {monitorConfirmed = false;bellActive = false;bellConnected = false;bellPending = false;ggActive=false;ggReady=false;ggSending=false;ggAckSending=false;refreshMonitorUi();shown = "ATOM接続済み";}
+        else if (text.startsWith("ERROR: ggwave")) {ggActive=false;ggReady=false;ggSending=false;ggAckSending=false;refreshMonitorUi();shown="ggwave開始失敗";}
+        else if (text.startsWith("GGWAVE READY")) {ggActive=true;ggReady=true;ggSending=false;ggAckSending=false;ggState="受信待機";refreshMonitorUi();shown="ggwave受信待機";}
+        else if (text.startsWith("GGWAVE TX START")) {if (!ggSending) ggAckSending=true;ggSending=true;ggState=ggAckSending?"ACK返信中":"送信中";refreshMonitorUi();shown="ggwave " + ggState;}
+        else if (text.startsWith("GGWAVE TX DONE")) {if (ggAckSending) {ggAckSending=false;ggSending=false;ggState="受信待機";shown="ggwave受信待機";} else {ggState="ACK待ち";shown="ggwave確認待ち";}refreshMonitorUi();}
         else if (text.startsWith("GGWAVE TX PROGRESS ")) {ggState="送信 " + text.substring("GGWAVE TX PROGRESS ".length());refreshMonitorUi();shown="ggwave " + ggState;}
         else if (text.startsWith("GGWAVE RX PROGRESS ")) {shown="ggwave受信 " + text.substring("GGWAVE RX PROGRESS ".length());}
-        else if (text.startsWith("GGWAVE MESSAGE SENT")) {ggSending=false;ggState="受信待機";refreshMonitorUi();shown="ggwave送達確認";addNotice(shown);}
-        else if (text.startsWith("GGWAVE MESSAGE FAILED") || text.startsWith("GGWAVE TX FAILED")) {ggSending=false;ggState="送信失敗";refreshMonitorUi();shown="ggwave送信失敗";addNotice(shown);}
+        else if (text.startsWith("GGWAVE MESSAGE SENT")) {ggSending=false;ggAckSending=false;ggState="受信待機";refreshMonitorUi();shown="ggwave送達確認";addNotice(shown);}
+        else if (text.startsWith("GGWAVE MESSAGE FAILED") || text.startsWith("GGWAVE TX FAILED")) {ggSending=false;ggAckSending=false;ggState="送信失敗";refreshMonitorUi();shown="ggwave送信失敗";addNotice(shown);}
         else if (text.startsWith("GGWAVE RX FAILED")) {ggState="受信失敗";refreshMonitorUi();shown="ggwave受信失敗";}
-        else if (text.startsWith("GGWAVE STOPPED")) {ggActive=false;ggReady=false;ggSending=false;refreshMonitorUi();shown="AX.25に復帰";}
+        else if (text.startsWith("GGWAVE STOPPED")) {ggActive=false;ggReady=false;ggSending=false;ggAckSending=false;refreshMonitorUi();shown="AX.25に復帰";}
         else if (text.startsWith("BELL103 AUTO RX CONTROL") && text.contains("state=connected")) {bellConnected = true;refreshMonitorUi();shown = "Bell 103接続済み";}
         else if (text.startsWith("BELL103 SESSION STOP") || text.startsWith("BELL103 AUTO CONNECT TIMEOUT")) {bellActive = false;bellConnected = false;bellPending = false;refreshMonitorUi();shown = "Bell 103切断";}
         else if (text.startsWith("BELL103 AUTO ACK OK")) {bellPending = false;shown = "Bell 103送達確認";}
@@ -865,7 +867,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
         else if (text.startsWith("AX25 DIRECT USB_DISCONNECTED")) {shown = "USB切断・直接チャットは未送信";addNotice(shown);}
         else if (text.startsWith("STATE RX LISTEN")) shown = "ATOM接続済み・受信中";
         else if (text.startsWith("LIVE RX stopped")) shown = "受信停止中";
-        else if (text.equals("USB切断")) {bellActive = false;bellConnected = false;bellPending = false;ggActive=false;ggReady=false;ggSending=false;refreshMonitorUi();shown = "ATOM未接続";}
+        else if (text.equals("USB切断")) {bellActive = false;bellConnected = false;bellPending = false;ggActive=false;ggReady=false;ggSending=false;ggAckSending=false;refreshMonitorUi();shown = "ATOM未接続";}
         else if (text.startsWith("MONITOR MODE=on")) {
             monitorConfirmed = true;
             shown = "ATOM接続済み・受信専用";
@@ -899,7 +901,7 @@ public final class MainActivity extends Activity implements UsbCdcTransport.List
     @Override public void onMessage(String source, String destination, String text) { addBubble(source, text, false); }
     @Override public void onGroupMessage(String source, String text) { addBubble(source, text, false); }
     @Override public void onBell103Message(String text) { addBubble("Bell 103", text, false); }
-    @Override public void onGgWaveMessage(String text) { runOnUiThread(() -> {ggState="受信成功";refreshMonitorUi();status.setText("ggwave受信成功");addBubble("ggwave",text,false);}); }
+    @Override public void onGgWaveMessage(String text) { runOnUiThread(() -> {ggAckSending=true;ggSending=true;ggState="ACK返信中";refreshMonitorUi();status.setText("ggwave受信成功・ACK返信中");addBubble("ggwave",text,false);}); }
     @Override public void onMonitorPacket(String source,String destination,int control,int pid,byte[] payload) {
         if (!monitorMode || !monitorConfirmed) return;
         runOnUiThread(() -> {
