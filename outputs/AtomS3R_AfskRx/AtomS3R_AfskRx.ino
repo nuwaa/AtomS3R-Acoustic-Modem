@@ -64,6 +64,8 @@ Bell103FskRx bell103Rx;
 Bell103Session bell103Session;
 Bell103DataLink bell103Data;
 GgWaveMode ggwaveMode;
+uint32_t ggwaveDecodeMaxUs=0;
+uint32_t ggwaveDecodeBlocks=0;
 Bell103Role bell103SessionRole=Bell103Role::Originate;
 bool bell103Auto=false;
 bool bell103AutoFailureReported=false;
@@ -1056,9 +1058,10 @@ bool startGgWave() {
     startLiveReceiver();return false;
   }
   acousticMode=AcousticMode::GgWave;
+  ggwaveDecodeMaxUs=0;ggwaveDecodeBlocks=0;
   screenStatus("GGWAVE RX WAIT");
-  Serial.printf("GGWAVE READY protocol=DT_FASTEST payload_max=16 sample_rate=24000 i2s=48000 heap=%d\n",
-                ggwaveMode.heapBytes());
+  Serial.printf("GGWAVE READY protocol=DT_FASTEST payload_max=16 sample_rate=24000 i2s=48000 heap=%d internal_free=%u psram_free=%u\n",
+                ggwaveMode.heapBytes(),(unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),(unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
   return true;
 }
 
@@ -1113,7 +1116,11 @@ void serviceGgWave() {
   if(err==ESP_ERR_TIMEOUT||received==0)return;
   if(err!=ESP_OK){Serial.println("GGWAVE RX FAILED: I2S read.");stopGgWave();return;}
   uint8_t text[GgWaveMode::kPayloadBytes];
+  const uint32_t began=micros();
   const int length=ggwaveMode.feedRx48(liveBlock,received/(2*sizeof(int32_t)),text,sizeof(text));
+  const uint32_t elapsed=micros()-began;
+  if(elapsed>ggwaveDecodeMaxUs)ggwaveDecodeMaxUs=elapsed;
+  ++ggwaveDecodeBlocks;
   if(length>0){
     screenStatus("GGWAVE RX OK");screenText(text,length);
     Serial.print("GGWAVE RX TEXT: ");Serial.write(text,length);Serial.println();
@@ -1168,8 +1175,10 @@ void loop() {
     else if(!strcmp(commandLine,"ggwave on"))startGgWave();
     else if(!strcmp(commandLine,"ggwave off"))stopGgWave();
     else if(!strcmp(commandLine,"ggwave show"))
-      Serial.printf("GGWAVE MODE=%s state=%s payload_max=16 protocol=DT_FASTEST\n",
-                    acousticMode==AcousticMode::GgWave?"on":"off",acousticMode!=AcousticMode::GgWave?"off":ggwaveMode.transmitting()?"tx":"rx_wait");
+      Serial.printf("GGWAVE MODE=%s state=%s payload_max=16 protocol=DT_FASTEST heap=%d internal_free=%u psram_free=%u rx_max_us=%u rx_blocks=%u\n",
+                    acousticMode==AcousticMode::GgWave?"on":"off",acousticMode!=AcousticMode::GgWave?"off":ggwaveMode.transmitting()?"tx":"rx_wait",
+                    ggwaveMode.heapBytes(),(unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),(unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                    (unsigned)ggwaveDecodeMaxUs,(unsigned)ggwaveDecodeBlocks);
     else if(!strncmp(commandLine,"ggwave send ",12))
       sendGgWave((const uint8_t*)commandLine+12,commandLength-12);
     else if(acousticMode==AcousticMode::Bell103 && strcmp(commandLine,"acoustic show") &&
