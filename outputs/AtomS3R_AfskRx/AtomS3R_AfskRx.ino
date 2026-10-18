@@ -66,6 +66,9 @@ Bell103DataLink bell103Data;
 GgWaveMode ggwaveMode;
 uint32_t ggwaveDecodeMaxUs=0;
 uint32_t ggwaveDecodeBlocks=0;
+uint8_t ggwaveLastRx[16]={};
+size_t ggwaveLastRxLength=0;
+uint32_t ggwaveLastRxAt=0;
 Bell103Role bell103SessionRole=Bell103Role::Originate;
 bool bell103Auto=false;
 bool bell103AutoFailureReported=false;
@@ -1059,6 +1062,7 @@ bool startGgWave() {
   }
   acousticMode=AcousticMode::GgWave;
   ggwaveDecodeMaxUs=0;ggwaveDecodeBlocks=0;
+  ggwaveLastRxLength=0;ggwaveLastRxAt=0;
   screenStatus("GGWAVE RX WAIT");
   Serial.printf("GGWAVE READY protocol=DT_FASTEST payload_max=16 sample_rate=24000 i2s=48000 heap=%d internal_free=%u psram_free=%u\n",
                 ggwaveMode.heapBytes(),(unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),(unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
@@ -1122,8 +1126,15 @@ void serviceGgWave() {
   if(elapsed>ggwaveDecodeMaxUs)ggwaveDecodeMaxUs=elapsed;
   ++ggwaveDecodeBlocks;
   if(length>0){
-    screenStatus("GGWAVE RX OK");screenText(text,length);
-    Serial.print("GGWAVE RX TEXT: ");Serial.write(text,length);Serial.println();
+    const uint32_t now=millis();
+    if(ggwaveLastRxLength==(size_t)length && now-ggwaveLastRxAt<3000 &&
+       !memcmp(ggwaveLastRx,text,length)) {
+      Serial.println("GGWAVE RX DUPLICATE suppressed");
+    } else {
+      memcpy(ggwaveLastRx,text,length);ggwaveLastRxLength=length;ggwaveLastRxAt=now;
+      screenStatus("GGWAVE RX OK");screenText(text,length);
+      Serial.print("GGWAVE RX TEXT: ");Serial.write(text,length);Serial.println();
+    }
   } else if(length==-2)Serial.println("GGWAVE RX FAILED: invalid UTF-8/padding.");
   else if(length==-1)Serial.println("GGWAVE RX FAILED: decoder input.");
 }

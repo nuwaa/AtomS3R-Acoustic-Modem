@@ -30,6 +30,17 @@ def wait_for(port, marker, seconds):
     raise TimeoutError(f"{port.port}: no {marker!r} within {seconds}s")
 
 
+def assert_no_repeat(port, marker, seconds=3):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        raw = port.readline()
+        if raw:
+            line = raw.decode("utf-8", "replace").strip()
+            print(f"{port.port}: {line}", flush=True)
+            if marker in line:
+                raise RuntimeError(f"{port.port}: duplicate {marker!r}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("port_a", nargs="?", default="COM5")
@@ -50,7 +61,9 @@ def main():
                 target.reset_input_buffer()
                 command(source, "ggwave send " + message)
                 wait_for(source, "GGWAVE TX DONE", 15)
-                wait_for(target, "GGWAVE RX TEXT: " + message, 15)
+                marker = "GGWAVE RX TEXT: " + message
+                wait_for(target, marker, 15)
+                assert_no_repeat(target, marker)
             print("TEST PASS: ggwave UTF-8 air link in both directions")
         finally:
             for port in (a, b):
