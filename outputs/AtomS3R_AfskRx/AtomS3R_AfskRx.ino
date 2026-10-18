@@ -1228,7 +1228,6 @@ void loop() {
     else if(!strcmp(commandLine,"acoustic show")) {
       if(acousticMode==AcousticMode::Ax25)Serial.println("ACOUSTIC MODE=ax25 READY=ax25");
       else if(acousticMode==AcousticMode::Bell103)Serial.printf("ACOUSTIC MODE=bell103 state=%s\n",bell103SessionStateName(bell103Session.state()));
-      else Serial.println("ACOUSTIC MODE=ggwave READY=rx_wait");
       else Serial.printf("ACOUSTIC MODE=ggwave state=%s\n",ggwaveMode.transmitting()?"tx":"rx_wait");
     }
     else if(!strcmp(commandLine,"bell103 tone")) {
