@@ -71,6 +71,7 @@ Bell103Session bell103Session;
 Bell103DataLink bell103Data;
 GgWaveMode ggwaveMode;
 GgWaveChatLink ggwaveLink;
+bool ggwaveWebRx=false;
 uint32_t ggwaveDecodeMaxUs=0;
 uint32_t ggwaveDecodeBlocks=0;
 Bell103Role bell103SessionRole=Bell103Role::Originate;
@@ -112,6 +113,7 @@ void bell103DataCommand(const char* command,size_t length);
 void bell103AutoCommand(const char* command);
 void serviceBell103Auto();
 bool startGgWave();
+bool startGgWaveWeb();
 void stopGgWave();
 void serviceGgWave();
 void sendGgWave(const uint8_t* text,size_t length);
@@ -1061,7 +1063,10 @@ void serviceLiveReceiver() {
 }
 
 bool startGgWave() {
-  if(acousticMode==AcousticMode::GgWave){Serial.println("GGWAVE READY (already active).");return true;}
+  if(acousticMode==AcousticMode::GgWave){
+    if(ggwaveWebRx){Serial.println("ERROR: stop ggwave web receive first.");return false;}
+    Serial.println("GGWAVE READY (already active).");return true;
+  }
   if(acousticMode!=AcousticMode::Ax25 || binaryHostMode() || monitorMode || reliableLink.busy()) {
     Serial.println("ERROR: stop Bell 103/monitor/reliable TX and use normal USB mode first.");return false;
   }
@@ -1073,6 +1078,7 @@ bool startGgWave() {
     startLiveReceiver();return false;
   }
   acousticMode=AcousticMode::GgWave;
+  ggwaveWebRx=false;
   ggwaveLink.reset();
   ggwaveLink.setIdSeed((uint16_t)esp_random());
   ggwaveDecodeMaxUs=0;ggwaveDecodeBlocks=0;
@@ -1082,10 +1088,35 @@ bool startGgWave() {
   return true;
 }
 
+bool startGgWaveWeb() {
+  if(acousticMode==AcousticMode::GgWave){
+    if(ggwaveWebRx){Serial.println("GGWAVE WEB READY (already active).");return true;}
+    Serial.println("ERROR: stop ggwave chat first.");return false;
+  }
+  if(acousticMode!=AcousticMode::Ax25 || binaryHostMode() || monitorMode || reliableLink.busy()) {
+    Serial.println("ERROR: stop Bell 103/monitor/reliable TX and use normal USB mode first.");return false;
+  }
+  stopLiveReceiver(false);
+  groupRuntime.enable(false,millis());
+  prepareReceiver();
+  if(!ggwaveMode.beginWebRx()) {
+    Serial.println("ERROR: ggwave web decoder allocation/initialization failed; AX.25 restored.");
+    startLiveReceiver();return false;
+  }
+  acousticMode=AcousticMode::GgWave;
+  ggwaveWebRx=true;
+  ggwaveDecodeMaxUs=0;ggwaveDecodeBlocks=0;
+  screenStatus("WEB GGWAVE RX");
+  Serial.printf("GGWAVE WEB READY protocols=AUDIBLE_NORMAL,FAST,FASTEST payload_max=140 sample_rate=24000 i2s=48000 heap=%d internal_free=%u psram_free=%u\n",
+                ggwaveMode.heapBytes(),(unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),(unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+  return true;
+}
+
 void stopGgWave() {
   if(acousticMode!=AcousticMode::GgWave)return;
   ggwaveMode.stop();
   ggwaveLink.reset();
+  ggwaveWebRx=false;
   speakerEnable(false);
   // A long stop-and-wait exchange repeatedly alternates the shared I2S
   // peripheral between RX and TX. Recreate its channels and reapply the
@@ -1111,6 +1142,7 @@ void stopGgWave() {
 
 void sendGgWave(const uint8_t* text,size_t length) {
   if(acousticMode!=AcousticMode::GgWave){Serial.println("ERROR: use ggwave on first.");return;}
+  if(ggwaveWebRx){Serial.println("ERROR: ggwave web mode is receive-only; use ggwave off first.");return;}
   if(ggwaveMode.transmitting()||ggwaveLink.busy()) {Serial.println("GGWAVE TX FAILED: previous message is still active.");return;}
   if(!ggwaveLink.queue(text,length,millis())) {
     Serial.println("GGWAVE TX FAILED: UTF-8 text must be 1..280 characters and at most 1120 bytes, without newlines.");return;
@@ -1150,6 +1182,26 @@ bool ggwaveLinkSelfTest() {
 
 void serviceGgWave() {
   if(acousticMode!=AcousticMode::GgWave)return;
+  if(ggwaveWebRx) {
+    size_t received=0;
+    esp_err_t err=i2s_channel_read(audio.rxChan(),liveBlock,sizeof(liveBlock),&received,20);
+    if(err==ESP_ERR_TIMEOUT||received==0)return;
+    if(err!=ESP_OK){Serial.println("GGWAVE WEB RX FAILED: I2S read.");stopGgWave();return;}
+    static uint8_t webText[GgWaveMode::kWebPayloadBytes];
+    const uint32_t began=micros();
+    const int length=ggwaveMode.feedRx48(liveBlock,received/(2*sizeof(int32_t)),webText,sizeof(webText));
+    const uint32_t elapsed=micros()-began;
+    if(elapsed>ggwaveDecodeMaxUs)ggwaveDecodeMaxUs=elapsed;
+    ++ggwaveDecodeBlocks;
+    if(length>0) {
+      size_t characters=0;
+      if(GgWaveChatLink::validUtf8(webText,length,characters)) {
+        screenStatus("WEB RX OK");screenText(webText,length);
+        Serial.print("GGWAVE WEB RX TEXT: ");Serial.write(webText,length);Serial.println();
+      } else Serial.println("GGWAVE WEB RX FAILED: invalid UTF-8 text.");
+    } else if(length==-2) Serial.println("GGWAVE WEB RX FAILED: payload too large.");
+    return;
+  }
   // The Arduino loop task has a small stack. A 64-byte fixed ggwave frame
   // already uses substantial codec stack, so keep PCM and reassembly buffers
   // in static storage instead of adding them to every service call's frame.
@@ -1248,7 +1300,7 @@ void loop() {
     bool resume=liveRx; stopLiveReceiver(false); dumpRecording(); if(resume)startLiveReceiver(); return;
   }
   if (!commandLength && c=='?') {
-    Serial.println("Commands: t <ASCII>; g <UTF-8>; k <UTF8-HEX>; group on|off|show; monitor on|off|show; acoustic show|ax25|ggwave; ggwave on|off|show|send <UTF-8 (1..280 chars)>; audio show|volume <0..100>|gain <0,6,..42>|ggwave <20..95>; bell103 tone|selftest|session selftest|session caller|answerer|tx|rx|show|stop|rx originate|rx answer|tx originate <text>|tx answer <text>; z <HEX>; y <HEX>; mode ppp; slip on; boot show|normal|slip|ppp|reset; u <HEX>; x <PIDHEX> <HEX>; c <SRC> <DEST>; l=RX; q=stop; r=batch; p=PCM."); return;
+    Serial.println("Commands: t <ASCII>; g <UTF-8>; k <UTF8-HEX>; group on|off|show; monitor on|off|show; acoustic show|ax25|ggwave; ggwave on|off|show|send <UTF-8 (1..280 chars)>|web on|web off; audio show|volume <0..100>|gain <0,6,..42>|ggwave <20..95>; bell103 tone|selftest|session selftest|session caller|answerer|tx|rx|show|stop|rx originate|rx answer|tx originate <text>|tx answer <text>; z <HEX>; y <HEX>; mode ppp; slip on; boot show|normal|slip|ppp|reset; u <HEX>; x <PIDHEX> <HEX>; c <SRC> <DEST>; l=RX; q=stop; r=batch; p=PCM."); return;
   }
   if (c=='\r') return;
   if (c=='\n') {
@@ -1269,12 +1321,15 @@ void loop() {
       audioSettingsCommand(commandLine);
     }
     else if(!strcmp(commandLine,"ggwave on"))startGgWave();
+    else if(!strcmp(commandLine,"ggwave web on"))startGgWaveWeb();
+    else if(!strcmp(commandLine,"ggwave web off"))stopGgWave();
     else if(!strcmp(commandLine,"ggwave off"))stopGgWave();
     else if(!strcmp(commandLine,"ggwave link selftest"))
       Serial.println(ggwaveLinkSelfTest()?"GGWAVE LINK SELFTEST PASS":"GGWAVE LINK SELFTEST FAIL");
     else if(!strcmp(commandLine,"ggwave show"))
-      Serial.printf("GGWAVE MODE=%s state=%s text_max=280 payload_max=64 protocol=DT_FASTEST heap=%d internal_free=%u psram_free=%u rx_max_us=%u rx_blocks=%u\n",
-                    acousticMode==AcousticMode::GgWave?"on":"off",acousticMode!=AcousticMode::GgWave?"off":ggwaveMode.transmitting()?"tx":"rx_wait",
+      Serial.printf("GGWAVE MODE=%s state=%s text_max=%u payload_max=%u protocol=%s heap=%d internal_free=%u psram_free=%u rx_max_us=%u rx_blocks=%u\n",
+                    acousticMode==AcousticMode::GgWave?ggwaveWebRx?"web":"on":"off",acousticMode!=AcousticMode::GgWave?"off":ggwaveMode.transmitting()?"tx":"rx_wait",
+                    ggwaveWebRx?140u:280u,ggwaveWebRx?140u:64u,ggwaveWebRx?"AUDIBLE_0,1,2":"DT_FASTEST",
                     ggwaveMode.heapBytes(),(unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),(unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
                     (unsigned)ggwaveDecodeMaxUs,(unsigned)ggwaveDecodeBlocks);
     else if(!strncmp(commandLine,"ggwave send ",12))

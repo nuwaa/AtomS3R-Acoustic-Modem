@@ -31,9 +31,9 @@ public:
   uint8_t receivedFragments() const { return receiveNext_; }
   uint8_t expectedFragments() const { return receiveCount_; }
   uint16_t sendId() const { return sendId_; }
+  static bool validUtf8(const uint8_t* text, size_t length, size_t& characters);
 
 private:
-  static bool validUtf8(const uint8_t* text, size_t length, size_t& characters);
   static uint8_t checksum(const uint8_t* data, size_t length);
   static bool decode(const uint8_t frame[kFrameBytes], uint8_t& type,
                      uint16_t& id, uint8_t& index, uint8_t& count, uint8_t& length);

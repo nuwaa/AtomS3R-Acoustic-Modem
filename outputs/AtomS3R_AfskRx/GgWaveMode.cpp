@@ -22,6 +22,7 @@ void GgWaveMode::stop() {
   delete modem_;
   modem_ = nullptr;
   transmitting_ = false;
+  webRx_ = false;
   txOffset_ = txSamples_ = 0;
   haveOdd_ = false;
   rxCount_ = 0;
@@ -37,6 +38,28 @@ bool GgWaveMode::beginRx() {
     stop();
     return false;
   }
+  return true;
+}
+
+bool GgWaveMode::beginWebRx() {
+  stop();
+  GGWave::setLogFile(nullptr);
+  // Klesis uses official variable-length ggwave with sound markers and
+  // protocol IDs 0..2. Keep it separate from our fixed DT chat/ACK codec.
+  GGWave::Protocols::rx().disableAll();
+  GGWave::Protocols::rx().toggle(GGWAVE_PROTOCOL_AUDIBLE_NORMAL, true);
+  GGWave::Protocols::rx().toggle(GGWAVE_PROTOCOL_AUDIBLE_FAST, true);
+  GGWave::Protocols::rx().toggle(GGWAVE_PROTOCOL_AUDIBLE_FASTEST, true);
+  GGWave::Protocols::tx().only(GGWAVE_PROTOCOL_AUDIBLE_NORMAL);
+  auto config = parameters(GGWAVE_OPERATING_MODE_RX);
+  config.payloadLength = -1;
+  config.soundMarkerThreshold = 1.5f;
+  modem_ = new (std::nothrow) GGWave();
+  if (!modem_ || !modem_->prepare(config)) {
+    stop();
+    return false;
+  }
+  webRx_ = true;
   return true;
 }
 
@@ -80,7 +103,8 @@ size_t GgWaveMode::renderTx48(int32_t* stereo, size_t capacityFrames) {
 }
 
 int GgWaveMode::feedRx48(const int32_t* stereo, size_t frames, uint8_t* data, size_t capacity) {
-  if (!modem_ || transmitting_ || !stereo || !data || capacity < kPayloadBytes || frames > kMaxInputFrames) return -1;
+  const size_t maxPayload = webRx_ ? kWebPayloadBytes : kPayloadBytes;
+  if (!modem_ || transmitting_ || !stereo || !data || capacity < maxPayload || frames > kMaxInputFrames) return -1;
   for (size_t i = 0; i < frames; ++i) {
     const int16_t sample = static_cast<int16_t>(stereo[2*i] >> 16);
     if (!haveOdd_) { oddSample_ = sample; haveOdd_ = true; }
@@ -92,11 +116,11 @@ int GgWaveMode::feedRx48(const int32_t* stereo, size_t frames, uint8_t* data, si
   if (rxCount_ < 512) return 0;
   rxCount_ = 0;
   if (!modem_->decode(rxFrame_, sizeof(rxFrame_))) return -1;
-  uint8_t decodedBytes[kPayloadBytes] = {};
-  GGWave::TxRxData decoded(decodedBytes, kPayloadBytes);
+  uint8_t decodedBytes[kWebPayloadBytes] = {};
+  GGWave::TxRxData decoded(decodedBytes, maxPayload);
   const int length = modem_->rxTakeData(decoded);
   if (length <= 0) return 0;
-  if (length != static_cast<int>(kPayloadBytes)) return -2;
-  memcpy(data, decoded.data(), kPayloadBytes);
-  return static_cast<int>(kPayloadBytes);
+  if (length > static_cast<int>(maxPayload) || (!webRx_ && length != static_cast<int>(kPayloadBytes))) return -2;
+  memcpy(data, decoded.data(), length);
+  return length;
 }

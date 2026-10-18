@@ -9,10 +9,12 @@
 class GgWaveMode {
 public:
   static constexpr size_t kPayloadBytes = 64;
+  static constexpr size_t kWebPayloadBytes = 140;
   static constexpr size_t kMaxInputFrames = 256;
 
   ~GgWaveMode();
   bool beginRx();
+  bool beginWebRx();
   bool beginTx(const uint8_t* frame, size_t length, int volume);
   void stop();
   bool transmitting() const { return transmitting_; }
@@ -22,10 +24,12 @@ public:
   // Positive: raw frame byte count. 0: waiting. -1: audio/codec error.
   int feedRx48(const int32_t* stereo, size_t frames, uint8_t* data, size_t capacity);
   int heapBytes() const { return modem_ ? modem_->heapSize() : 0; }
+  bool webRx() const { return webRx_; }
 
 private:
   static GGWave::Parameters parameters(int operatingMode);
   GGWave* modem_ = nullptr;
+  bool webRx_ = false;
   bool transmitting_ = false;
   size_t txOffset_ = 0;
   size_t txSamples_ = 0;
