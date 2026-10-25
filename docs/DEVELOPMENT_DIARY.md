@@ -57,3 +57,11 @@ COM5のATOMでは、klesisのAudible Normalから送った「こんにちは」�
 128×128画面では日本語、簡体字、半角カナを表示する。半角カナが全角幅になったため8ピクセル幅で描く処理を追加し、ユーザーが両端末で確認した。絵文字はUnicode 18.0のfully-qualified 3,963種からNoto Emojiの16×16・32色画像を生成して内蔵した。最初の実機表示では全体が青く、❤️と🇯🇵の赤が出なかった。M5GFXへ渡すRGB565画像の型を明示して色の扱いを修正し、両端末への再書き込み後、ユーザーが赤の表示を確認した。
 
 Arduino core 3.3.2、M5Atomic-EchoBase 1.0.2、M5GFX 0.2.32、ESP32S3 Dev Module、Flash 8 MB、Default 8MB partition、OPI PSRAM、USB CDC On Boot有効でビルドした。最終ビルドはスケッチ3,013,335 / 3,342,336バイト（90%）、グローバル変数131,460 / 327,680バイト（40%）。使用したバイナリのSHA256は `A4EB341E1EEC0346B470E9C9A37FCB6CDF599B15600E15CDABA88EEBD92AD4EA`。この数値はこの日の構成に対する記録で、コードの再生成・再ビルド後の一致を保証するものではない。
+
+## 2026年10月26日 — ブラウザーからの導入と4言語案内
+
+Arduino環境を構築しなくてもATOM S3Rへ導入できるよう、[Can You Hear the Data?のPR #4](https://github.com/nuwaa/Can-You-Hear-the-Data/pull/4)で[ブラウザーインストーラー](https://nuwaa.github.io/Can-You-Hear-the-Data/install.html)を公開した。ESP Web ToolsでESP32-S3用統合イメージをUSB経由で書き込む。書き込み前に利用者がATOM S3Rであることと既存ファームウェア・保存設定の上書きを確認する。ATOM S3R以外のESP32-S3も接続候補になり得るため、端末の目視確認が必要。
+
+配布イメージは前日の実機確認済みアプリを含み、8 MB統合ファイルの末尾の未使用 `0xFF` 領域だけを除いた3,080,192バイト。配布ファイルのSHA-256は `cb56a9d5905437ce034bc71c88ffb731ab5c09648e004527efa2989a855b6960`。前節の `A4EB...` はアプリ単体のハッシュで、統合イメージとは対象ファイルが異なる。Web側のビルドでは配布ファイルのサイズ・ハッシュ・配置を検査し、GitHub Pagesから配信されたファイルとも照合した。
+
+公開後、ユーザーがブラウザー経由の書き込みとその後の動作を実機で確認した。試した台数、PC環境、書き込み時間、失敗率は未記録。[Web側のPR #5](https://github.com/nuwaa/Can-You-Hear-the-Data/pull/5)で英語・簡体字・繁体字・日本語の専用ページを追加し、4ページの表示と書き込み前の確認動作をヘッドレスChromeで検査した。4言語すべてからの実機書き込みは個別には確認していない。詳しい配布経緯は[Webアプリ側の対応履歴](https://github.com/nuwaa/Can-You-Hear-the-Data/blob/main/docs/ATOM_S3R_SUPPORT_HISTORY.md)に記録した。

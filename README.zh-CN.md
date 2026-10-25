@@ -4,6 +4,8 @@
 
 **[Can You Hear the Data?](https://github.com/nuwaa/Can-You-Hear-the-Data) 的 ATOM S3R 接收端：** `feature/ggwave` 固件正常开机后自动接收网页应用的声音，并显示日文、简体中文、半角假名和彩色表情。请参阅[当前日文说明](README.md)和[硬件接收端指南](https://github.com/nuwaa/Can-You-Hear-the-Data/blob/main/docs/ATOM_S3R_RECEIVER.md)。以下 Bell 103 说明记录的是较早的开发阶段。
 
+可通过[浏览器安装页面](https://nuwaa.github.io/Can-You-Hear-the-Data/install.zh-CN.html)刷入接收固件，无需配置 Arduino 环境。用户于 2026 年 10 月 26 日确认浏览器刷写和实机运行。[开发日志](docs/DEVELOPMENT_DIARY.zh-CN.md)记录了固件及分发过程。
+
 此 `feature/bell103` 分支是 M5Stack ATOM S3R 与 ATOMIC ECHO BASE（Atomic Voice Base）声学调制解调器的开发版。在保存的 1200 bps Bell 202 / AX.25 模式之外，加入了可切换的 300 bps Bell 103 模式。电脑或 Android 设备通过 USB-C 连接 ATOM；两台 ATOM 通过空气中的声音通信，不使用无线电发射机。仅含 AX.25 的保存版仍位于 [main 分支](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/main)和标签 `v0.3.1`。
 
 10 月 5 日以来的开发过程与实机测试记录在[开发日记](docs/DEVELOPMENT_DIARY.zh-CN.md)，后续也会继续补充。
