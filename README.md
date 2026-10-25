@@ -6,13 +6,13 @@
 
 10月5日からの作業と実機試験は [開発日記](docs/DEVELOPMENT_DIARY.md) に記録し、以後の作業も追記します。
 
-ATOM S3R受信機は、Arduino環境を用意せずに[ブラウザーインストーラー（日本語）](https://nuwaa.github.io/Can-You-Hear-the-Data/install.ja.html)から導入できます。2026年10月26日にユーザーがブラウザー経由の書き込みと動作を実機で確認しました。英語・簡体字・繁体字のページもあり、配布の経緯は上記の開発日記に記録しています。
+ATOM S3R受信機は、Arduino環境を用意せずに[ブラウザーインストーラー（日本語）](https://nuwaa.github.io/Can-You-Hear-the-Data/install.ja.html)から導入できます。2026年10月26日にユーザーが改行対応版をブラウザーから2台へ書き込み、改行を含む本文が両方の画面で複数行表示されることを確認しました。英語・簡体字・繁体字のページもあり、配布の経緯は上記の開発日記に記録しています。
 
 2台の実機デモをiPhoneで撮る手順は[撮影台本](docs/VIDEO_SHOOTING_GUIDE.md)を参照してください。
 
 ## Can You Hear the Data? のATOM S3R受信機
 
-[Can You Hear the Data?](https://github.com/nuwaa/Can-You-Hear-the-Data) のWebアプリが送るggwave Audible Normal（可変長、最大140 UTF-8バイト）を、ATOM S3R + ATOMIC ECHO BASEで受信できます。通常起動時は `ggwave web on` 相当の受信待機に自動で入ります。ブラウザから「音で送信」すると、復号した本文を128×128画面とUSBシリアルの `GGWAVE WEB RX TEXT:` に表示します。シリアルは115200 bpsです。ブラウザ側で受信を開始する操作は、ATOMへ送るだけなら不要です。
+[Can You Hear the Data?](https://github.com/nuwaa/Can-You-Hear-the-Data) のWebアプリが送るggwave Audible Normal（可変長、最大140 UTF-8バイト）を、ATOM S3R + ATOMIC ECHO BASEで受信できます。通常起動時は `ggwave web on` 相当の受信待機に自動で入ります。ブラウザから「音で送信」すると、復号した本文を改行を保持して128×128画面とUSBシリアルの `GGWAVE WEB RX TEXT:` に表示します。シリアルは115200 bpsです。ブラウザ側で受信を開始する操作は、ATOMへ送るだけなら不要です。
 
 画面は日本語、簡体字、半角カナを表示し、Unicode 18.0の fully-qualified 絵文字3,963種を16×16カラー画像で表示します。半角カナは8ピクセル幅です。絵文字は小画面向けの32色画像なので、元の画像と完全に同じ色・細部にはなりません。❤️と🇯🇵の赤は実機で確認済みです。表示用の [EmojiSprites.cpp](outputs/AtomS3R_AfskRx/EmojiSprites.cpp) はNoto Emojiから生成したデータで、出典と再生成方法は [第三者ライセンス](THIRD_PARTY.md) に記しています。
 

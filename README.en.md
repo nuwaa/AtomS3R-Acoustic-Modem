@@ -4,7 +4,7 @@
 
 **Current ATOM S3R receiver for [Can You Hear the Data?](https://github.com/nuwaa/Can-You-Hear-the-Data):** The `feature/ggwave` firmware now starts audible ggwave web reception on normal boot and displays Japanese, Simplified Chinese, half-width kana, and color emoji. See the [current Japanese README](README.md) and the [hardware receiver guide](https://github.com/nuwaa/Can-You-Hear-the-Data/blob/main/docs/ATOM_S3R_RECEIVER.md). The Bell 103 description below reflects the earlier development stage.
 
-The [browser installer](https://nuwaa.github.io/Can-You-Hear-the-Data/install.en.html) can flash this receiver firmware without an Arduino setup. The user confirmed browser flashing and operation on an ATOM S3R on October 26, 2026. The [development diary](docs/DEVELOPMENT_DIARY.en.md) records the firmware and distribution work.
+The [browser installer](https://nuwaa.github.io/Can-You-Hear-the-Data/install.en.html) can flash this receiver firmware without an Arduino setup. On October 26, 2026, the user installed the line-break build from the browser on two ATOM S3R units and confirmed that both displays showed multiline text correctly. The [development diary](docs/DEVELOPMENT_DIARY.en.md) records the firmware and distribution work.
 
 This `feature/bell103` branch is a development version of the acoustic modem for the M5Stack ATOM S3R and ATOMIC ECHO BASE (Atomic Voice Base). It adds a selectable 300 bps Bell 103 mode alongside the preserved 1200 bps Bell 202 / AX.25 mode. A PC or Android device connects to an ATOM over USB-C; two ATOM units communicate through the air, without a radio transmitter. The AX.25-only snapshot remains on the [main branch](https://github.com/nuwaa/AtomS3R-Acoustic-Modem/tree/main) and tag `v0.3.1`.
 
