@@ -8,6 +8,14 @@
 
 2台の実機デモをiPhoneで撮る手順は[撮影台本](docs/VIDEO_SHOOTING_GUIDE.md)を参照してください。
 
+## Can You Hear the Data? のATOM S3R受信機
+
+[Can You Hear the Data?](https://github.com/nuwaa/Can-You-Hear-the-Data) のWebアプリが送るggwave Audible Normal（可変長、最大140 UTF-8バイト）を、ATOM S3R + ATOMIC ECHO BASEで受信できます。通常起動時は `ggwave web on` 相当の受信待機に自動で入ります。ブラウザから「音で送信」すると、復号した本文を128×128画面とUSBシリアルの `GGWAVE WEB RX TEXT:` に表示します。シリアルは115200 bpsです。ブラウザ側で受信を開始する操作は、ATOMへ送るだけなら不要です。
+
+画面は日本語、簡体字、半角カナを表示し、Unicode 18.0の fully-qualified 絵文字3,963種を16×16カラー画像で表示します。半角カナは8ピクセル幅です。絵文字は小画面向けの32色画像なので、元の画像と完全に同じ色・細部にはなりません。❤️と🇯🇵の赤は実機で確認済みです。表示用の [EmojiSprites.cpp](outputs/AtomS3R_AfskRx/EmojiSprites.cpp) はNoto Emojiから生成したデータで、出典と再生成方法は [第三者ライセンス](THIRD_PARTY.md) に記しています。
+
+Arduino設定は **ESP32S3 Dev Module / Flash 8 MB / Default 8MB partition / OPI PSRAM / USB CDC On Boot有効**。core 3.3.2、M5Atomic-EchoBase 1.0.2、M5GFX 0.2.32と、同梱の [ggwave-arduino](third_party/ggwave-arduino) を使用します。Web受信は専用モードで、従来の固定長DTチャット／ACKとは同時に動作しません。USBシリアルで `ggwave web off` と入力すると終了できます。音の届く距離・騒音・ブラウザ音声設定により受信結果は変わります。
+
 ## ハードウェア
 
 - 各ノード: ATOM S3R、ATOMIC ECHO BASE、USB-C データケーブル、USB ホストとなる PC または Android 端末

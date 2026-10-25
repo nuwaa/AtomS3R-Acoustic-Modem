@@ -1,0 +1,209 @@
+"""Build 16x16/32-color emoji sprites from Unicode 18.0 and Noto Emoji PNGs."""
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+from PIL import Image
+
+ROOT = Path(__file__).resolve().parents[1]
+DEST = ROOT / 'outputs/AtomS3R_AfskRx'
+PNG_DIRS: list[Path] = []
+EMOJI_TEST = Path()
+IMAGE_SIZE = 16
+COLORS = 32
+SPRITE_BYTES = 64 + IMAGE_SIZE * IMAGE_SIZE * 5 // 8
+HASH_SLOTS = 8192
+
+
+def image_path(cps: tuple[int, ...]) -> Path:
+    options = [cps, tuple(cp for cp in cps if cp != 0xFE0F)]
+    for folder in PNG_DIRS:
+        for seq in options:
+            filename = 'emoji_u' + '_'.join(f'{cp:04x}' for cp in seq) + '.png'
+            path = folder / filename
+            if path.is_file():
+                return path
+    raise FileNotFoundError(cps)
+
+
+def sprite_bytes(path: Path) -> bytes:
+    with Image.open(path) as source:
+        image = source.convert('RGBA').resize((IMAGE_SIZE, IMAGE_SIZE), Image.Resampling.LANCZOS)
+    canvas = Image.new('RGBA', image.size, (0, 0, 0, 255))
+    canvas.alpha_composite(image)
+    quantized = canvas.convert('RGB').quantize(colors=COLORS, method=Image.Quantize.MEDIANCUT)
+    indices = bytes(quantized.getdata())
+    assert len(indices) == 256 and max(indices) < COLORS
+    rgb_palette = quantized.getpalette() or []
+    rgb_palette += [0] * (COLORS * 3 - len(rgb_palette))
+    palette = bytearray()
+    for i in range(COLORS):
+        r, g, b = rgb_palette[i * 3:i * 3 + 3]
+        color = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
+        palette.extend((color & 255, color >> 8))
+    packed = bytearray()
+    acc = bits = 0
+    for index in indices:
+        acc |= index << bits
+        bits += 5
+        if bits >= 8:
+            packed.append(acc & 255)
+            acc >>= 8
+            bits -= 8
+    assert bits == 0 and len(packed) == 160
+    result = bytes(palette + packed)
+    assert len(result) == SPRITE_BYTES
+    return result
+
+
+def fnv(data: bytes) -> int:
+    value = 2166136261
+    for byte in data:
+        value = ((value ^ byte) * 16777619) & 0xFFFFFFFF
+    return value
+
+
+def c_byte_array(name: str, data: bytes) -> str:
+    lines = [f'const uint8_t {name}[] PROGMEM = {{']
+    for start in range(0, len(data), 20):
+        lines.append('  ' + ','.join(str(x) for x in data[start:start + 20]) + ',')
+    lines.append('};')
+    return '\n'.join(lines)
+
+
+def c_u16_array(name: str, data: list[int]) -> str:
+    lines = [f'const uint16_t {name}[] PROGMEM = {{']
+    for start in range(0, len(data), 20):
+        lines.append('  ' + ','.join(str(x) for x in data[start:start + 20]) + ',')
+    lines.append('};')
+    return '\n'.join(lines)
+
+
+def main() -> None:
+    global PNG_DIRS, EMOJI_TEST
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--noto', required=True, type=Path,
+                        help='Noto Emoji checkout at revision e20cbc2bbec1926686be9f9bee7d1d2cfa1fea0e')
+    parser.add_argument('--emoji-test', required=True, type=Path,
+                        help='Unicode 18.0 emoji-test.txt')
+    args = parser.parse_args()
+    PNG_DIRS = [args.noto / '2D/png/32', args.noto / '3D/png/32']
+    EMOJI_TEST = args.emoji_test
+    records: list[tuple[tuple[int, ...], Path]] = []
+    for line in EMOJI_TEST.read_text(encoding='utf-8').splitlines():
+        if '; fully-qualified' not in line or line.lstrip().startswith('#'):
+            continue
+        cps = tuple(int(x, 16) for x in line.split(';', 1)[0].split())
+        records.append((cps, image_path(cps)))
+    assert len(records) == 3963, len(records)
+
+    sprites: list[bytes] = []
+    sprite_by_data: dict[bytes, int] = {}
+    keys: dict[bytes, int] = {}
+    for cps, path in records:
+        sprite = sprite_bytes(path)
+        index = sprite_by_data.get(sprite)
+        if index is None:
+            index = len(sprites)
+            sprites.append(sprite)
+            sprite_by_data[sprite] = index
+        text = ''.join(chr(cp) for cp in cps).encode('utf-8')
+        keys[text] = index
+        alias = ''.join(chr(cp) for cp in cps if cp != 0xFE0F).encode('utf-8')
+        keys.setdefault(alias, index)
+
+    key_blob = bytearray()
+    entries: list[tuple[int, int, int]] = []
+    slots = [0] * HASH_SLOTS
+    for key, sprite_index in sorted(keys.items()):
+        offset = len(key_blob)
+        key_blob.extend(key)
+        key_blob.append(0)
+        index = len(entries)
+        entries.append((offset, sprite_index, len(key)))
+        slot = fnv(key) & (HASH_SLOTS - 1)
+        while slots[slot]:
+            slot = (slot + 1) & (HASH_SLOTS - 1)
+        slots[slot] = index + 1
+
+    sprite_blob = b''.join(sprites)
+    header = '''#pragma once
+#include <Arduino.h>
+
+struct EmojiMatch { uint16_t sprite; uint8_t bytes; };
+bool findEmojiSprite(const uint8_t* text, size_t remaining, EmojiMatch& match);
+void decodeEmojiSprite(uint16_t sprite, uint16_t pixels[256]);
+'''
+    source = '''// Generated by tools/generate_emoji_sprites.py from Unicode 18.0 and Noto Emoji.
+#include "EmojiSprites.h"
+#include <pgmspace.h>
+#include <string.h>
+
+namespace {
+constexpr uint32_t kSpriteBytes = 224;
+constexpr uint32_t kHashMask = 8191;
+constexpr uint32_t kMaxKeyBytes = MAX_KEY_BYTES;
+struct KeyEntry { uint32_t offset; uint16_t sprite; uint8_t length; };
+SPRITES
+KEYS
+ENTRIES
+SLOTS
+}
+
+bool findEmojiSprite(const uint8_t* text, size_t remaining, EmojiMatch& match) {
+  uint32_t hash = 2166136261u;
+  bool found = false;
+  const size_t limit = remaining < kMaxKeyBytes ? remaining : kMaxKeyBytes;
+  for (size_t length = 1; length <= limit; ++length) {
+    hash = (hash ^ text[length - 1]) * 16777619u;
+    uint32_t slot = hash & kHashMask;
+    for (;;) {
+      const uint16_t indexPlusOne = pgm_read_word(&kEmojiSlots[slot]);
+      if (!indexPlusOne) break;
+      const KeyEntry& entry = kEmojiEntries[indexPlusOne - 1];
+      const uint8_t keyLength = pgm_read_byte(&entry.length);
+      if (keyLength == length &&
+          memcmp_P(text, kEmojiKeys + pgm_read_dword(&entry.offset), length) == 0) {
+        match.sprite = pgm_read_word(&entry.sprite);
+        match.bytes = static_cast<uint8_t>(length);
+        found = true;
+        break;
+      }
+      slot = (slot + 1) & kHashMask;
+    }
+  }
+  return found;
+}
+
+void decodeEmojiSprite(uint16_t sprite, uint16_t pixels[256]) {
+  const uint8_t* data = kEmojiSprites + uint32_t(sprite) * kSpriteBytes;
+  const uint8_t* indices = data + 64;
+  for (uint16_t pos = 0; pos < 256; ++pos) {
+    const uint16_t bit = pos * 5;
+    const uint16_t byte = bit >> 3;
+    const uint8_t shift = bit & 7;
+    uint16_t value = pgm_read_byte(indices + byte);
+    if (shift > 3) value |= uint16_t(pgm_read_byte(indices + byte + 1)) << 8;
+    const uint8_t paletteIndex = (value >> shift) & 31;
+    const uint8_t* color = data + uint16_t(paletteIndex) * 2;
+    pixels[pos] = pgm_read_byte(color) | (uint16_t(pgm_read_byte(color + 1)) << 8);
+  }
+}
+'''
+    entry_lines = ['const KeyEntry kEmojiEntries[] PROGMEM = {']
+    for offset, sprite_index, length in entries:
+        entry_lines.append(f'  {{{offset},{sprite_index},{length}}},')
+    entry_lines.append('};')
+    source = source.replace('MAX_KEY_BYTES', str(max(len(key) for key in keys)))
+    source = source.replace('SPRITES', c_byte_array('kEmojiSprites', sprite_blob))
+    source = source.replace('KEYS', c_byte_array('kEmojiKeys', bytes(key_blob)))
+    source = source.replace('ENTRIES', '\n'.join(entry_lines))
+    source = source.replace('SLOTS', c_u16_array('kEmojiSlots', slots))
+    (DEST / 'EmojiSprites.h').write_text(header, encoding='utf-8')
+    (DEST / 'EmojiSprites.cpp').write_text(source, encoding='utf-8')
+    print(f'emoji={len(records)} aliases={len(keys)} sprites={len(sprites)}')
+    print(f'bytes sprite={len(sprite_blob)} keys={len(key_blob)} hash={len(slots)*2} cpp={len(source)}')
+
+
+if __name__ == '__main__':
+    main()

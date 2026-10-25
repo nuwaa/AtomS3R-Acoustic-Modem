@@ -6,6 +6,8 @@
 #include <esp_system.h>
 #include <M5GFX.h>
 #include <Preferences.h>
+#include <ggwave.h>
+#include "EmojiSprites.h"
 #include "AfskDecoder.h"
 #include "Ax25Frame.h"
 #include "AcousticAx25Transport.h"
@@ -191,6 +193,48 @@ bool traditionalChineseHint(uint32_t cp) {
   }
 }
 
+const lgfx::IFont* screenFontFor(uint32_t cp) {
+  // Prefer Japanese forms for kana, including Unicode half-width kana.
+  const lgfx::IFont* choices[3] = {
+    traditionalChineseHint(cp) ? static_cast<const lgfx::IFont*>(&fonts::efontTW_16)
+                               : static_cast<const lgfx::IFont*>(&fonts::efontJA_16),
+    &fonts::efontCN_16,
+    &fonts::efontTW_16,
+  };
+  lgfx::FontMetrics metric{};
+  for (const lgfx::IFont* font : choices) {
+    if (cp <= 0xffff && font->updateFontMetric(&metric, static_cast<uint16_t>(cp)))
+      return font;
+  }
+  return &fonts::efontJA_16;
+}
+
+uint32_t fullWidthKana(uint32_t cp) {
+  static const uint16_t mapped[] = {
+    0x3002, 0x300C, 0x300D, 0x3001, 0x30FB, 0x30F2, 0x30A1, 0x30A3,
+    0x30A5, 0x30A7, 0x30A9, 0x30E3, 0x30E5, 0x30E7, 0x30C3, 0x30FC,
+    0x30A2, 0x30A4, 0x30A6, 0x30A8, 0x30AA, 0x30AB, 0x30AD, 0x30AF,
+    0x30B1, 0x30B3, 0x30B5, 0x30B7, 0x30B9, 0x30BB, 0x30BD, 0x30BF,
+    0x30C1, 0x30C4, 0x30C6, 0x30C8, 0x30CA, 0x30CB, 0x30CC, 0x30CD,
+    0x30CE, 0x30CF, 0x30D2, 0x30D5, 0x30D8, 0x30DB, 0x30DE, 0x30DF,
+    0x30E0, 0x30E1, 0x30E2, 0x30E4, 0x30E6, 0x30E8, 0x30E9, 0x30EA,
+    0x30EB, 0x30EC, 0x30ED, 0x30EF, 0x30F3, 0x309B, 0x309C,
+  };
+  if (cp < 0xff61 || cp > 0xff9f) return cp;
+  return mapped[cp - 0xff61];
+}
+
+size_t encodeScreenUtf8(uint32_t cp, uint8_t* out) {
+  if (cp < 0x80) { out[0] = cp; return 1; }
+  if (cp < 0x800) {
+    out[0] = 0xc0 | (cp >> 6); out[1] = 0x80 | (cp & 0x3f); return 2;
+  }
+  out[0] = 0xe0 | (cp >> 12);
+  out[1] = 0x80 | ((cp >> 6) & 0x3f);
+  out[2] = 0x80 | (cp & 0x3f);
+  return 3;
+}
+
 void screenText(const uint8_t* text, size_t length) {
   if (!displayReady) return;
   display.fillRect(0,20,128,108,TFT_BLACK);
@@ -199,16 +243,53 @@ void screenText(const uint8_t* text, size_t length) {
   display.setTextWrap(true,true);
   display.setCursor(2,24);
   for(size_t pos=0;pos<length;){
+    EmojiMatch emoji{};
+    if(findEmojiSprite(text+pos,length-pos,emoji)) {
+      static uint16_t pixels[256];
+      int32_t x=display.getCursorX(), y=display.getCursorY();
+      if(x+16>128){x=2;y+=16;}
+      if(y+16<=128) {
+        decodeEmojiSprite(emoji.sprite,pixels);
+        // The sprite decoder produces native RGB565. The uint16_t overload
+        // assumes byte-swapped data unless setSwapBytes() is enabled.
+        display.pushImage(x,y,16,16,reinterpret_cast<const lgfx::rgb565_t*>(pixels));
+        display.setCursor(x+16,y);
+      }
+      pos+=emoji.bytes;
+      continue;
+    }
     size_t start=pos;
     uint32_t cp=text[pos++];
     if((cp&0xe0)==0xc0 && pos<length)cp=((cp&0x1f)<<6)|(text[pos++]&0x3f);
     else if((cp&0xf0)==0xe0 && pos+1<length){cp=((cp&0x0f)<<12)|((text[pos]&0x3f)<<6)|(text[pos+1]&0x3f);pos+=2;}
     else if((cp&0xf8)==0xf0 && pos+2<length){cp=((cp&7)<<18)|((text[pos]&0x3f)<<12)|((text[pos+1]&0x3f)<<6)|(text[pos+2]&0x3f);pos+=3;}
-    // efontTW covers traditional variants but lacks some Japanese kana.
-    // Switch for the specific traditional glyph, then restore Japanese font
-    // for the rest of a mixed Japanese/Traditional Chinese message.
-    display.setFont(traditionalChineseHint(cp) ? &fonts::efontTW_16 : &fonts::efontJA_16);
-    display.write(text+start,pos-start);
+    if (cp >= 0xff61 && cp <= 0xff9f) {
+      lgfx::FontMetrics metric{};
+      const lgfx::IFont* narrowFont = nullptr;
+      const lgfx::IFont* kanaFonts[] = {
+        &fonts::efontJA_16, &fonts::efontCN_16, &fonts::efontTW_16
+      };
+      for (const lgfx::IFont* font : kanaFonts) {
+        if (font->updateFontMetric(&metric, static_cast<uint16_t>(cp)) &&
+            metric.x_advance <= 8) { narrowFont = font; break; }
+      }
+      if (narrowFont) {
+        display.setFont(narrowFont);
+        display.write(text+start,pos-start);
+      } else {
+        // Draw the matching kana in an 8-pixel cell when no narrow glyph exists.
+        const uint32_t normalized = fullWidthKana(cp);
+        uint8_t glyph[3];
+        const size_t glyphBytes = encodeScreenUtf8(normalized, glyph);
+        display.setFont(screenFontFor(normalized));
+        display.setTextSize(0.5f,1.0f);
+        display.write(glyph,glyphBytes);
+        display.setTextSize(1);
+      }
+    } else {
+      display.setFont(screenFontFor(cp));
+      display.write(text+start,pos-start);
+    }
   }
 }
 
@@ -352,9 +433,12 @@ void setup() {
   if (!writeRegister(0x43,0x07,0x00) || !writeRegister(0x43,0x0d,0xff) ||
       !writeRegister(0x43,0x03,0x6f) || !writeRegister(0x43,0x05,0x00))
     fatal("ERROR: Atomic Voice Base speaker control at 0x43.");
-  Serial.printf("Ready: SRC=%s DEST=%s BOOT=%s ACOUSTIC=%s; ?=help.\n",localCall,remoteCall,bootModeName(bootMode),acousticModeName(acousticMode));
   startLiveReceiver();
   activateHostMode(bootMode);
+  if(bootMode==BootMode::Normal && !startGgWaveWeb())
+    Serial.println("WARNING: ggwave web receive boot failed; AX.25 receive restored.");
+  Serial.printf("Ready: SRC=%s DEST=%s BOOT=%s ACOUSTIC=%s; ?=help.\n",localCall,remoteCall,bootModeName(bootMode),
+                ggwaveWebRx?"ggwave-web":acousticModeName(acousticMode));
 }
 
 // Read small blocks, explicitly detecting errors/short reads. 32-bit I2S -> s16 PCM.
