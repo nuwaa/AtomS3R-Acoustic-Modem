@@ -49,3 +49,19 @@
 COM5 的 ATOM 透過空氣中的聲音，成功解碼 klesis 以 Audible Normal 傳送的「こんにちは」、「你好」、「Hello」，專項測試通過。結束網頁音訊接收後，AX.25 直接聊天雙向的文字與送達確認也通過。把 COM5 的 ATOM 接到第一台 OPPO 後，`Web確認 こんにちは` 同時顯示在應用程式與 ATOM 小螢幕。
 
 第二台 ATOM（COM6）也完成相同韌體燒錄，第二台 OPPO 安裝新版應用程式；燒錄與安裝均通過。這一組同樣在 OPPO 聊天畫面及 ATOM 小螢幕顯示來自 klesis 的 `Web確認 你好`。目前實機驗證的網頁音訊模式僅有 Audible Normal。Fast/Fastest、44.1 kHz 瀏覽器音訊、超音波模式，以及 ATOM 傳送至 klesis 尚未測試。網頁音訊模式只能接收，不能與現有 ggwave 聊天同時運作。
+
+## 2026 年 10 月 25 日 — 接收 Can You Hear the Data? 並改善顯示
+
+`feature/ggwave` 韌體加入接收 [Can You Hear the Data?](https://github.com/nuwaa/Can-You-Hear-the-Data) 可變長度 ggwave Audible Normal 訊號的功能，正常開機後會自動進入網頁音訊接收狀態。這與 ATOM 間固定長度 DT 聊天及 ACK 協定分開。使用者替 COM5、COM6 兩台 ATOM S3R 燒錄，並確認啟動後的接收狀態。
+
+128×128 螢幕支援日文、簡體中文及八像素寬的半形假名。修正半形假名一度佔用全形寬度的問題後，使用者在兩台裝置上確認顯示。韌體還內建依據 Noto Emoji 產生的 16×16、32 色圖片，涵蓋 Unicode 18.0 的 3,963 種 fully-qualified 表情序列。最初實機顯示整體偏藍；修正 RGB565 圖像型別後，使用者確認 ❤️ 與 🇯🇵 正確呈現紅色。
+
+驗證時使用 ESP32 Arduino core 3.3.2、M5Atomic-EchoBase 1.0.2、M5GFX 0.2.32、ESP32S3 Dev Module、8 MB Flash、Default 8MB partition、OPI PSRAM，並啟用 USB CDC On Boot。單獨應用程式二進位檔的 SHA-256 為 `A4EB341E1EEC0346B470E9C9A37FCB6CDF599B15600E15CDABA88EEBD92AD4EA`。瀏覽器取樣率、傳輸距離、雜訊條件及成功率未記錄。
+
+## 2026 年 10 月 26 日 — 瀏覽器安裝與四種語言頁面
+
+[網頁 App PR #4](https://github.com/nuwaa/Can-You-Hear-the-Data/pull/4)新增[瀏覽器安裝頁面](https://nuwaa.github.io/Can-You-Hear-the-Data/install.zh-TW.html)，不必設定 Arduino 環境即可替 ATOM S3R 燒錄。頁面使用 ESP Web Tools，要求使用者確認裝置型號，以及原有韌體和已儲存設定將被覆寫。只偵測到 ESP32-S3 晶片，並不能證明裝置是 ATOM S3R。
+
+散布的合併映像檔包含先前實機驗證的應用程式；相較於原 8 MB 映像檔，只移除尾端未使用的 `0xFF` 位元組。散布檔案為 3,080,192 位元組，SHA-256 是 `cb56a9d5905437ce034bc71c88ffb731ab5c09648e004527efa2989a855b6960`。這與上述單獨應用程式檔案的雜湊值不同。網頁 App 建置時會檢查檔案大小、雜湊值和映像配置。發布後，使用者確認透過瀏覽器燒錄及後續運作正常。瀏覽器燒錄的測試台數、電腦環境、所需時間及失敗率未記錄。
+
+[網頁 App PR #5](https://github.com/nuwaa/Can-You-Hear-the-Data/pull/5)新增英語、簡體中文、繁體中文及日語安裝頁面。使用無介面的 Chrome 檢查四個頁面的內容與寫入前確認條件，也確認頁面已發布。尚未逐一從四種語言頁面進行實機燒錄。散布細節另記於[網頁 App 的支援歷程](https://github.com/nuwaa/Can-You-Hear-the-Data/blob/main/docs/ATOM_S3R_SUPPORT_HISTORY.md)。

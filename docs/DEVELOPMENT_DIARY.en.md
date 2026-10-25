@@ -49,3 +49,19 @@ On `feature/ggwave`, we added a receive-only mode for audio from [klesis Web cha
 The COM5 ATOM decoded “こんにちは”, “你好”, and “Hello” sent over the air from klesis in Audible Normal mode; the dedicated test passed. After stopping Web reception, AX.25 direct chat passed in both directions with text and delivery confirmation. With this ATOM attached to the first OPPO, `Web確認 こんにちは` appeared both in the app and on the ATOM display.
 
 We flashed the second ATOM (COM6) and installed the updated app on the second OPPO. Flash and installation passed, and `Web確認 你好` from klesis appeared in both that OPPO's chat and its ATOM display. Audible Normal is the Web audio mode verified on hardware. Fast/Fastest, 44.1 kHz browser audio, ultrasonic modes, and ATOM-to-klesis transmission remain untested. Web reception is receive-only and cannot run alongside the existing ggwave chat mode.
+
+## October 25, 2026 — Can You Hear the Data? receiver and display
+
+The `feature/ggwave` firmware was adapted to receive the variable-length ggwave Audible Normal signal from [Can You Hear the Data?](https://github.com/nuwaa/Can-You-Hear-the-Data). Normal boot now starts Web audio reception automatically. This remains separate from the fixed-length ATOM-to-ATOM DT chat and ACK protocol. The user flashed the two ATOM S3R units on COM5 and COM6 and confirmed the receive state after startup.
+
+On the 128×128 display, Japanese and Simplified Chinese text is supported, and half-width kana is drawn at an eight-pixel width. The user confirmed this width on both devices after a correction. The firmware also includes 16×16, 32-color sprites generated from 3,963 Unicode 18.0 fully qualified Noto Emoji sequences. Initial hardware output was predominantly blue; an RGB565 type correction restored red in ❤️ and 🇯🇵, which the user confirmed on both devices.
+
+The verified build used ESP32 Arduino core 3.3.2, M5Atomic-EchoBase 1.0.2, M5GFX 0.2.32, ESP32S3 Dev Module, 8 MB flash, Default 8MB partition, OPI PSRAM, and USB CDC On Boot. The app-only binary SHA-256 was `A4EB341E1EEC0346B470E9C9A37FCB6CDF599B15600E15CDABA88EEBD92AD4EA`. Browser sample rates, acoustic distance, background-noise conditions, and delivery success rates were not recorded.
+
+## October 26, 2026 — Browser installation and four-language guide
+
+The [browser installer](https://nuwaa.github.io/Can-You-Hear-the-Data/install.html), added in [Web app PR #4](https://github.com/nuwaa/Can-You-Hear-the-Data/pull/4), lets a user flash an ATOM S3R without setting up Arduino. It uses ESP Web Tools and asks the user to confirm the board and replacement of existing firmware and saved settings. ESP32-S3 detection alone does not identify the board as an ATOM S3R.
+
+The distributed merged image contains the app already verified on hardware; only unused trailing `0xFF` bytes were removed from the original 8 MB image. The 3,080,192-byte distributed file has SHA-256 `cb56a9d5905437ce034bc71c88ffb731ab5c09648e004527efa2989a855b6960`. This differs from the app-only hash above because it covers a different file. The Web app build checks its size, hash, and image layout. After publication, the user confirmed browser flashing and subsequent operation on an ATOM S3R. The number of devices tested through the browser, computer environment, flashing time, and failure rate were not recorded.
+
+[Web app PR #5](https://github.com/nuwaa/Can-You-Hear-the-Data/pull/5) added separate installer pages in English, Simplified Chinese, Traditional Chinese, and Japanese. Their content and confirmation gate were checked in headless Chrome, and all four pages were confirmed published. Flashing from each language page was not separately tested on hardware. The [Web app support history](https://github.com/nuwaa/Can-You-Hear-the-Data/blob/main/docs/ATOM_S3R_SUPPORT_HISTORY.md) records the distribution details.

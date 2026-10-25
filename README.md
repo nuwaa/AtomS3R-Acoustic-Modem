@@ -6,6 +6,8 @@
 
 10月5日からの作業と実機試験は [開発日記](docs/DEVELOPMENT_DIARY.md) に記録し、以後の作業も追記します。
 
+ATOM S3R受信機は、Arduino環境を用意せずに[ブラウザーインストーラー（日本語）](https://nuwaa.github.io/Can-You-Hear-the-Data/install.ja.html)から導入できます。2026年10月26日にユーザーがブラウザー経由の書き込みと動作を実機で確認しました。英語・簡体字・繁体字のページもあり、配布の経緯は上記の開発日記に記録しています。
+
 2台の実機デモをiPhoneで撮る手順は[撮影台本](docs/VIDEO_SHOOTING_GUIDE.md)を参照してください。
 
 ## Can You Hear the Data? のATOM S3R受信機
