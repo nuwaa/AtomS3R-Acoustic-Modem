@@ -49,3 +49,11 @@ Bell 103の受信窓を接続後のみ最大9秒から6秒に短縮し、無音�
 COM5のATOMでは、klesisのAudible Normalから送った「こんにちは」「你好」「Hello」を実際の空気中の音で復号し、専用試験はPASSした。Web受信終了後、AX.25直接チャットも双方向で本文・送達確認を確認した。COM5のATOMを1台目OPPOへ接続すると、`Web確認 こんにちは` がOPPOのチャット欄とATOM小画面の両方に表示された。
 
 もう1台のATOM（COM6）にも同じファームウェアを書き込み、もう1台のOPPOにも更新アプリを導入した。両方の書き込み・インストールがPASSし、こちらの組でもklesisからの `Web確認 你好` がOPPOとATOM小画面の両方に表示された。今回実機で確認したWeb音声方式はAudible Normal。Fast/Fastest、44.1 kHz環境、超音波方式、ATOMからklesisへの送信は未検証である。Web受信モードは受信専用で、既存のggwaveチャットと同時には使わない。
+
+## 2026年10月25日 — Can You Hear the Data? のATOM S3R受信と多言語表示
+
+[Can You Hear the Data?](https://github.com/nuwaa/Can-You-Hear-the-Data) のWebアプリから送る可変長ggwave Audible Normalを受けるため、通常起動時にWeb音声受信モードを自動開始するようにした。既存のATOM間固定長DTチャットと区別する。ユーザーがCOM5・COM6の両ATOMに書き込み、起動後に受信状態へ入ることを確認した。送信側のブラウザ音声条件、距離、騒音下の成功率は記録していない。
+
+128×128画面では日本語、簡体字、半角カナを表示する。半角カナが全角幅になったため8ピクセル幅で描く処理を追加し、ユーザーが両端末で確認した。絵文字はUnicode 18.0のfully-qualified 3,963種からNoto Emojiの16×16・32色画像を生成して内蔵した。最初の実機表示では全体が青く、❤️と🇯🇵の赤が出なかった。M5GFXへ渡すRGB565画像の型を明示して色の扱いを修正し、両端末への再書き込み後、ユーザーが赤の表示を確認した。
+
+Arduino core 3.3.2、M5Atomic-EchoBase 1.0.2、M5GFX 0.2.32、ESP32S3 Dev Module、Flash 8 MB、Default 8MB partition、OPI PSRAM、USB CDC On Boot有効でビルドした。最終ビルドはスケッチ3,013,335 / 3,342,336バイト（90%）、グローバル変数131,460 / 327,680バイト（40%）。使用したバイナリのSHA256は `A4EB341E1EEC0346B470E9C9A37FCB6CDF599B15600E15CDABA88EEBD92AD4EA`。この数値はこの日の構成に対する記録で、コードの再生成・再ビルド後の一致を保証するものではない。
