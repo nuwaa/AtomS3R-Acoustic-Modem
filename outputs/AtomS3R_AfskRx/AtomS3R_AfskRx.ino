@@ -243,6 +243,8 @@ void screenText(const uint8_t* text, size_t length) {
   display.setTextWrap(true,true);
   display.setCursor(2,24);
   for(size_t pos=0;pos<length;){
+    if(text[pos]=='\r'){++pos;continue;}
+    if(text[pos]=='\n'){display.write('\n');++pos;continue;}
     EmojiMatch emoji{};
     if(findEmojiSprite(text+pos,length-pos,emoji)) {
       static uint16_t pixels[256];
@@ -1278,10 +1280,11 @@ void serviceGgWave() {
     if(elapsed>ggwaveDecodeMaxUs)ggwaveDecodeMaxUs=elapsed;
     ++ggwaveDecodeBlocks;
     if(length>0) {
+      const size_t normalizedLength=GgWaveChatLink::normalizeNewlines(webText,(size_t)length);
       size_t characters=0;
-      if(GgWaveChatLink::validUtf8(webText,length,characters)) {
-        screenStatus("WEB RX OK");screenText(webText,length);
-        Serial.print("GGWAVE WEB RX TEXT: ");Serial.write(webText,length);Serial.println();
+      if(GgWaveChatLink::validUtf8(webText,normalizedLength,characters,true)) {
+        screenStatus("WEB RX OK");screenText(webText,normalizedLength);
+        Serial.print("GGWAVE WEB RX TEXT: ");Serial.write(webText,normalizedLength);Serial.println();
       } else Serial.println("GGWAVE WEB RX FAILED: invalid UTF-8 text.");
     } else if(length==-2) Serial.println("GGWAVE WEB RX FAILED: payload too large.");
     return;

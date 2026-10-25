@@ -31,7 +31,9 @@ public:
   uint8_t receivedFragments() const { return receiveNext_; }
   uint8_t expectedFragments() const { return receiveCount_; }
   uint16_t sendId() const { return sendId_; }
-  static bool validUtf8(const uint8_t* text, size_t length, size_t& characters);
+  static size_t normalizeNewlines(uint8_t* text, size_t length);
+  static bool validUtf8(const uint8_t* text, size_t length, size_t& characters,
+                        bool allowNewlines = false);
 
 private:
   static uint8_t checksum(const uint8_t* data, size_t length);

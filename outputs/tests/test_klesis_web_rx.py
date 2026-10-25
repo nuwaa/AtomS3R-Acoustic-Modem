@@ -36,7 +36,11 @@ def main():
             for message in ("こんにちは", "你好", "Hello"):
                 print(f"Klesis (https://nolimitwaiz.github.io/klesis/) をNormalにし、{message!r} を1回送ってください。", flush=True)
                 wait_for(port, "GGWAVE WEB RX TEXT: " + message, 120)
-            print("TEST PASS: Klesis audible protocols decoded three UTF-8 messages", flush=True)
+            print("Klesisから '一行目\\n二行目' を改行入りで1回送ってください。", flush=True)
+            wait_for(port, "GGWAVE WEB RX TEXT: 一行目", 120)
+            wait_for(port, "二行目", 5)
+            print("ATOM画面が一行目・二行目の2行表示になっていることを確認してください。", flush=True)
+            print("TEST PASS: Klesis decoded UTF-8 text including a line break", flush=True)
             port.write(b"ggwave show\n")
             wait_for(port, "GGWAVE MODE=web", 5)
         finally:

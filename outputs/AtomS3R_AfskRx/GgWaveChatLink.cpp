@@ -29,12 +29,25 @@ void GgWaveChatLink::reset() {
   resetReceive();
 }
 
-bool GgWaveChatLink::validUtf8(const uint8_t* text, size_t length, size_t& characters) {
+size_t GgWaveChatLink::normalizeNewlines(uint8_t* text, size_t length) {
+  if (!text) return 0;
+  size_t write = 0;
+  for (size_t read = 0; read < length; ++read) {
+    if (text[read] == '\r') {
+      text[write++] = '\n';
+      if (read + 1 < length && text[read + 1] == '\n') ++read;
+    } else text[write++] = text[read];
+  }
+  return write;
+}
+
+bool GgWaveChatLink::validUtf8(const uint8_t* text, size_t length, size_t& characters,
+                               bool allowNewlines) {
   characters = 0;
   if (!text || !length || length > kMaxTextBytes) return false;
   for (size_t i = 0; i < length;) {
     uint8_t c = text[i];
-    if (!c || c == '\r' || c == '\n') return false;
+    if (!c || c == '\r' || (c == '\n' && !allowNewlines)) return false;
     if (c < 0x80) { ++i; ++characters; continue; }
     int extra = 0; uint32_t cp = 0;
     if (c >= 0xC2 && c <= 0xDF) { extra = 1; cp = c & 0x1F; }
